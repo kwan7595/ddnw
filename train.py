@@ -233,7 +233,6 @@ def forward_loss(model, criterion, input, target, meter):
         correct_k = correct[:k].float().sum(0)
         accuracy_list = list(correct_k.cpu().detach().numpy())
         meter["top{}_accuracy".format(k)].cache_list(accuracy_list)
-
     return loss
 
 
@@ -293,16 +292,15 @@ def run_one_epoch(
             iter += 1
 
             optimizer.zero_grad()
-
-            loss = forward_loss(model, criterion, input, target, meters) + model.get_weight_loss()
-            ### tanh loss for resource constraint.
+            ## resource constraint loss.
+            loss = forward_loss(model, criterion, input, target, meters) + (1e-3)*model.module.get_weight_loss()
             loss.backward()
             optimizer.step()
 
         else:
             ############################### VAL #################################
 
-            loss = forward_loss(model, criterion, input, target, meters) + model.get_weight_loss()
+            loss = forward_loss(model, criterion, input, target, meters) + (1e-3)*model.module.get_weight_loss()
 
         batch_time = time.time() - end
         end = time.time()
@@ -381,6 +379,7 @@ def train_val_test():
     criterion = torch.nn.CrossEntropyLoss(reduction="none").to(device)
 
     print("=> creating model '{}'".format(FLAGS.model))
+    ##add threshold as param.
     model = getter("model")()
 
     optimizer = get_optimizer(model)

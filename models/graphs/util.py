@@ -18,10 +18,10 @@ def get_conv(inp, oup):
 
 
 class Graph(nn.Conv2d):
-    def __init__(self, prune_rate, dim_in, dim_out):
+    def __init__(self, prune_rate, dim_in, dim_out,threshold):
         super(Graph, self).__init__(dim_in, dim_out, kernel_size=1, bias=False)
         self.prune_rate = prune_rate
-
+        self.threshold = threshold
     def get_weight(self):
         return self.weight
 
@@ -34,7 +34,7 @@ class Graph(nn.Conv2d):
 
     ###code for resource-constraint loss : L1 loss on edge weight, activation with tanh
     def get_weight_loss(self):
-        out = F.tanh(self.weight).abs().sum()  ## do i need to detach?
+        out = F.tanh(self.weight).abs().sum()  ## weight is randomly initialized -> loss explodes with tanh. ->scaled..
         return out
 
 ########################################################################################################################
@@ -77,14 +77,16 @@ class RandomGraph(Graph):
 
 class ChooseTopEdges(autograd.Function):
     """ Chooses the top edges for the forwards pass but allows gradient flow to all edges in the backwards pass"""
-
+    ## add tau - threshold value to choose edges those weights are higher than t
     @staticmethod
-    def forward(ctx, weight, prune_rate):
+    def forward(ctx, weight, prune_rate,threshold):
         output = weight.clone()
         _, idx = weight.flatten().abs().sort()
-        p = int(prune_rate * weight.numel())
+        #p = int(prune_rate * weight.numel())
         flat_oup = output.flatten()
-        flat_oup[idx[:p]] = 0
+        #flat_oup[idx[:p]] = 0
+        mask = nn.Threshold(threshold,0)
+        flat_oup = mask(flat_oup)
         return output
 
     @staticmethod
@@ -93,11 +95,11 @@ class ChooseTopEdges(autograd.Function):
 
 
 class DNW(Graph):
-    def __init__(self, prune_rate, dim_in, dim_out):
-        super().__init__(prune_rate, dim_in, dim_out)
+    def __init__(self, prune_rate, dim_in, dim_out,threshold):
+        super().__init__(prune_rate, dim_in, dim_out,threshold)
 
     def get_weight(self):
-        return ChooseTopEdges.apply(self.weight, self.prune_rate)
+        return ChooseTopEdges.apply(self.weight, self.prune_rate,self.threshold)
 
 
 ########################################################################################################################
@@ -256,11 +258,11 @@ class Complete(Graph):
 ########################################################################################################################
 
 
-def get_graph(prune_rate, dim_in, dim_out, in_channels=None, out_channels=None):
+def get_graph(prune_rate, dim_in, dim_out, in_channels=None, out_channels=None,threshold=0.006):
     if FLAGS.graph == "random":
         return RandomGraph(prune_rate, dim_in, dim_out, in_channels, out_channels)
     elif FLAGS.graph == "dnw":
-        return DNW(prune_rate, dim_in, dim_out)
+        return DNW(prune_rate, dim_in, dim_out,threshold)
     elif FLAGS.graph == "dnw_no_update":
         return DNWNoUpdate(prune_rate, dim_in, dim_out, in_channels, out_channels)
     elif FLAGS.graph == "reg_td":

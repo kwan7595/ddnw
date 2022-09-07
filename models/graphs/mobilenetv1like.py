@@ -13,7 +13,7 @@ if getattr(FLAGS, 'use_dgl', False):
 
 
 class Block(nn.Module):
-    def __init__(self, inp, oup, stride, blocks):
+    def __init__(self, inp, oup, stride, blocks,threshold):
         super(Block, self).__init__()
 
         self.inp = inp
@@ -23,6 +23,9 @@ class Block(nn.Module):
 
         self.stride = stride
         self.blocks = blocks
+
+        ##threshold for edge selection
+        self.threshold = threshold
 
         self.fast_eval = False
 
@@ -68,6 +71,7 @@ class Block(nn.Module):
             self.oup * self.blocks,
             self.inp,
             self.oup,
+            self.threshold
         )
 
         self.prune_rate = prune_rate
@@ -174,6 +178,10 @@ class Block(nn.Module):
 
     def get_weight(self):
         return self.graph.get_weight()
+
+    ## weight loss for resource
+    def get_weight_loss(self):
+        return self.graph.get_weight_loss()
 
     def forward(self, x):
         if self.fast_eval:
@@ -324,14 +332,18 @@ class Block(nn.Module):
 
 
 class Linear(nn.Module):
-    def __init__(self, inp):
+    def __init__(self, inp,threshold):
         super(Linear, self).__init__()
         self.inp = inp
         self.oup = FLAGS.output_size
         self.graph = get_graph(FLAGS.prune_rate, inp, FLAGS.output_size)
+        self.threshold = threshold
 
     def get_weight(self):
         return self.graph.get_weight()
+
+    def get_weight_loss(self):
+        return self.graph.get_weight_loss()
 
     def profiling(self):
         w = self.get_weight().squeeze().t()
@@ -356,7 +368,7 @@ class MobileNetV1Like(nn.Module):
         (512, 1024, 2, 2),
     ]
 
-    def __init__(self,):
+    def __init__(self,threshold):
         super(MobileNetV1Like, self).__init__()
         self.conv1 = nn.Conv2d(
             3,
@@ -375,12 +387,12 @@ class MobileNetV1Like(nn.Module):
             self.linear = nn.Linear(1024, FLAGS.output_size)
         self.relu = nn.ReLU(inplace=True)
         self.bn = nn.BatchNorm2d(1024)
-
+        self.threshold = 0.006
     def _make_layers(self):
         blocks = []
         for x in self.cfg:
             inp, oup, stride, layers = x
-            blocks.append(Block(inp, oup, stride, layers))
+            blocks.append(Block(inp, oup, stride, layers,self.threshold))
 
         return nn.Sequential(*blocks)
 
@@ -391,6 +403,14 @@ class MobileNetV1Like(nn.Module):
         if hasattr(self.linear, "get_weight"):
             out.append(self.linear.get_weight())
         return out
+
+    ## get weight loss for resource constraint
+    def get_weight_loss(self):
+        out = 0
+        for layer in self.layers:
+            out+=layer.get_weight_loss()
+        if hasattr(self.linear, "get_weight"):
+            out+=self.linear.get_weight_loss()
 
     def forward(self, x):
         out = self.conv1(x)
