@@ -294,14 +294,15 @@ def run_one_epoch(
 
             optimizer.zero_grad()
 
-            loss = forward_loss(model, criterion, input, target, meters)
+            loss = forward_loss(model, criterion, input, target, meters) + model.get_weight_loss()
+            ### tanh loss for resource constraint.
             loss.backward()
             optimizer.step()
 
         else:
             ############################### VAL #################################
 
-            loss = forward_loss(model, criterion, input, target, meters)
+            loss = forward_loss(model, criterion, input, target, meters) + model.get_weight_loss()
 
         batch_time = time.time() - end
         end = time.time()
@@ -465,7 +466,9 @@ def train_val_test():
     else:
         checkpoint_prefix = "./checkpoints"
 
-    log_dir = os.path.join(log_prefix, title + "-" + local_start_time_str)
+    ## : can't be a file name in windows
+    #log_dir = os.path.join(log_prefix, title + "-" + local_start_time_str)
+    log_dir = os.path.join(log_prefix, title + "-" + local_start_time_str.replace(":","-"))
     checkpoint_dir = os.path.join(checkpoint_prefix, title.replace("/", "_"))
     if not os.path.exists(checkpoint_dir):
         os.mkdir(checkpoint_dir)

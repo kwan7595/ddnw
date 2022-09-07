@@ -278,6 +278,10 @@ class StaticNeuralGraph(nn.Module):
     def get_weight(self):
         return self.graph.get_weight()
 
+    ### get edge weight loss
+    def get_weight_loss(self):
+        return self.graph.get_weight_loss()
+
     def forward(self, x):
         x = torch.cat(
             (self.downsample(x), self.zeros.expand(x.size(0), *self.zeros.size()[1:])),

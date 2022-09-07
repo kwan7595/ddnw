@@ -32,6 +32,10 @@ class Graph(nn.Conv2d):
         )
         return x
 
+    ###code for resource-constraint loss : L1 loss on edge weight, activation with tanh
+    def get_weight_loss(self):
+        out = F.tanh(self.weight).abs().sum()  ## do i need to detach?
+        return out
 
 ########################################################################################################################
 # Random Graph                                                                                                         #
