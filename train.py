@@ -293,14 +293,14 @@ def run_one_epoch(
 
             optimizer.zero_grad()
             ## resource constraint loss.
-            loss = forward_loss(model, criterion, input, target, meters) + (1e-3)*model.module.get_weight_loss()
+            loss = forward_loss(model, criterion, input, target, meters) + (1e-4)*model.module.get_weight_loss()
             loss.backward()
             optimizer.step()
 
         else:
             ############################### VAL #################################
 
-            loss = forward_loss(model, criterion, input, target, meters) + (1e-3)*model.module.get_weight_loss()
+            loss = forward_loss(model, criterion, input, target, meters) + (1e-4)*model.module.get_weight_loss()
 
         batch_time = time.time() - end
         end = time.time()

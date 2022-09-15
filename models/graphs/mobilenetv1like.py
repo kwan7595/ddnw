@@ -368,8 +368,9 @@ class MobileNetV1Like(nn.Module):
         (512, 1024, 2, 2),
     ]
 
-    def __init__(self,threshold):
+    def __init__(self):
         super(MobileNetV1Like, self).__init__()
+        self.threshold = 0.006
         self.conv1 = nn.Conv2d(
             3,
             32,
@@ -387,7 +388,7 @@ class MobileNetV1Like(nn.Module):
             self.linear = nn.Linear(1024, FLAGS.output_size)
         self.relu = nn.ReLU(inplace=True)
         self.bn = nn.BatchNorm2d(1024)
-        self.threshold = 0.006
+
     def _make_layers(self):
         blocks = []
         for x in self.cfg:
@@ -405,12 +406,14 @@ class MobileNetV1Like(nn.Module):
         return out
 
     ## get weight loss for resource constraint
+    ## fixed to list( per-layer weight loss, return value addition)
     def get_weight_loss(self):
         out = 0
         for layer in self.layers:
             out+=layer.get_weight_loss()
         if hasattr(self.linear, "get_weight"):
-            out+=self.linear.get_weight_loss()
+            out+=layer.get_weight_loss()
+        return out
 
     def forward(self, x):
         out = self.conv1(x)
