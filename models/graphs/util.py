@@ -83,7 +83,8 @@ class ChooseTopEdges(autograd.Function):
         output = weight.clone()
         _, idx = weight.flatten().abs().sort()
         #p = int(prune_rate * weight.numel())
-        flat_oup = output.flatten()
+        #flat_oup = output.flatten()
+        flat_oup = output.flatten().abs() # fixed to absolute value for pruning edges
         #flat_oup[idx[:p]] = 0
         mask = nn.Threshold(threshold,0)
         flat_oup = mask(flat_oup)
