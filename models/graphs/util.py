@@ -80,14 +80,20 @@ class ChooseTopEdges(autograd.Function):
     ## add tau - threshold value to choose edges those weights are higher than t
     @staticmethod
     def forward(ctx, weight, prune_rate,threshold):
-        output = weight.clone()
-        _, idx = weight.flatten().abs().sort()
+        output = weight.clone() # for masking
+        mask_output = weight.clone().detach() # for regularizing, thresholding.
+        #_, idx = weight.flatten().abs().sort()
         #p = int(prune_rate * weight.numel())
         #flat_oup = output.flatten()
-        flat_oup = output.flatten().abs() # fixed to absolute value for pruning edges
+        flat_real_oup = F.tanh(mask_output.flatten()).abs() # fixed to absolute value for pruning edges, regularize with tanh.
+        flat_oup = output.flatten()
         #flat_oup[idx[:p]] = 0
-        mask = nn.Threshold(threshold,0)
-        flat_oup = mask(flat_oup)
+        mask = nn.Threshold(threshold,0,inplace=True)
+        mask(flat_real_oup) # inplace
+        real_mask = [True if data==0 else False for data in flat_oup] # if dead, mask = True, else false
+        for i,flag in enumerate(real_mask):
+            if flag:
+                flat_oup[i]=0
         return output
 
     @staticmethod
