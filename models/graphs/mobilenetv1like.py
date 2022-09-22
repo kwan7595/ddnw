@@ -82,7 +82,8 @@ class Block(nn.Module):
 
         # graph ops.
         w = self.get_weight().squeeze().t()
-        num_edges = w.size(0) * w.size(1) * (1 - self.graph.prune_rate)
+        #num_edges = w.size(0) * w.size(1) * (1 - self.graph.prune_rate)
+        num_edges = w.size(0)*w.size(1)(1-w.count(0)) #remove edge
         graph_n_macs = num_edges * spatail * spatail
         graph_n_params = num_edges
 
@@ -370,7 +371,7 @@ class MobileNetV1Like(nn.Module):
 
     def __init__(self):
         super(MobileNetV1Like, self).__init__()
-        self.threshold = 0.006
+        self.threshold = FLAGS.threshold#0.012
         self.conv1 = nn.Conv2d(
             3,
             32,

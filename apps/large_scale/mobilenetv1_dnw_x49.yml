@@ -4,8 +4,8 @@ model: models.graphs.mobilenetv1like:MobileNetV1Like
 
 # data
 data: data.imagenet:ImageNet
-batch_size: 512
-test_batch_size: 512
+batch_size: 1024 #512
+test_batch_size: 1024 #512
 workers: 32
 
 # lr
@@ -37,3 +37,6 @@ prune_rate: 0.51
 skip_profiling: False
 graph: dnw
 setting: static
+##new value for threshold,lambda
+threshold: 0.006
+lambda : 1e-4
