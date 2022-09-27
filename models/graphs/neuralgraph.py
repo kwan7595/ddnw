@@ -86,7 +86,9 @@ class DiscreteTimeNeuralGraph(nn.Module):
 
     def profiling(self):
         w = self.get_weight().squeeze().t()
-        num_edges = w.size(0) * w.size(1) * (1 - self.graph.prune_rate)
+        #num_edges = w.size(0) * w.size(1) * (1 - self.graph.prune_rate)
+        mask = w.ge(FLAGS.threshold)
+        num_edges = torch.masked_select(w,mask).numel()
         graph_n_params = num_edges
 
         has_output = (w.abs().sum(1) != 0)
@@ -281,6 +283,23 @@ class StaticNeuralGraph(nn.Module):
     ### get edge weight loss
     def get_weight_loss(self):
         return self.graph.get_weight_loss()
+    ## profiling for small-scale static-neural graph with dnw
+    def profiling(self):
+        w = self.get_weight().squeeze().t()
+        #num_edges = w.size(0) * w.size(1) * (1 - self.graph.prune_rate)
+        mask = w.ge(FLAGS.threshold) # ccount edges those weights are over threshold
+        num_edges = torch.masked_select(w,mask).numel()
+        graph_n_params = num_edges
+
+        has_output = (w.abs().sum(1) != 0)
+        has_input = (w.abs().sum(0) != 0)
+
+        # node ops. no ops at output nodes.
+        num_nodes_with_ops = has_output.sum()
+        node_n_params = num_nodes_with_ops * 3 * 3
+        n_params = int(node_n_params + graph_n_params)
+
+        return n_params
 
     def forward(self, x):
         x = torch.cat(

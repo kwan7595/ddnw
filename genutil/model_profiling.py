@@ -5,8 +5,9 @@ def model_profiling(model):
     n_macs = 0
     n_params = 0
 
-    if FLAGS.skip_profiling:
-        return n_macs, n_params
+    if FLAGS.skip_profiling: # profiling for neuralgraph
+        #return n_macs, n_params
+        return model.profiling()
 
     # using n_macs for conv2d as
     # (ins[1] * outs[1] *

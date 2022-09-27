@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import autograd
-
+import torch.nn.utils.prune as prune
 from genutil.config import FLAGS
 
 
@@ -36,7 +36,6 @@ class Graph(nn.Conv2d):
     def get_weight_loss(self):
         out = F.tanh(self.weight).abs().sum()  ## weight is randomly initialized -> loss explodes with tanh. ->scaled..
         return out
-
 ########################################################################################################################
 # Random Graph                                                                                                         #
 ########################################################################################################################
@@ -80,13 +79,13 @@ class ChooseTopEdges(autograd.Function):
     ## add tau - threshold value to choose edges those weights are higher than t
     @staticmethod
     def forward(ctx, weight, prune_rate,threshold):
-        output = weight.clone() # for masking
+        output = weight
         #_, idx = weight.flatten().abs().sort()
         #p = int(prune_rate * weight.numel())
         flat_oup = output.flatten()
         #flat_oup[idx[:p]] = 0
         mask = nn.Threshold(threshold,0,inplace=True)
-        mask(output) # inplace
+        mask(flat_oup) # inplace
         return output
 
     @staticmethod

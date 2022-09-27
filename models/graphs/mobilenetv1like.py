@@ -83,7 +83,8 @@ class Block(nn.Module):
         # graph ops.
         w = self.get_weight().squeeze().t()
         #num_edges = w.size(0) * w.size(1) * (1 - self.graph.prune_rate)
-        num_edges = w.size(0)*w.size(1)(1-w.count(0)) #remove edge
+        mask = w.ge(FLAGS.threshold)  # ccount edges those weights are over threshold
+        num_edges = torch.masked_select(w, mask).numel()
         graph_n_macs = num_edges * spatail * spatail
         graph_n_params = num_edges
 
@@ -348,7 +349,10 @@ class Linear(nn.Module):
 
     def profiling(self):
         w = self.get_weight().squeeze().t()
-        num_edges = int(w.size(0) * w.size(1) * (1 - self.graph.prune_rate))
+        #num_edges = int(w.size(0) * w.size(1) * (1 - self.graph.prune_rate))
+        #num_edges = w.size(0)*w.size(1)*(len(w)-len(torch.nonzero(w))) #remove edge
+        mask = w.ge(FLAGS.threshold)  # ccount edges those weights are over threshold
+        num_edges = torch.masked_select(w, mask).numel()
         n_macs = num_edges
         n_params = num_edges
         return n_macs, n_params, None
