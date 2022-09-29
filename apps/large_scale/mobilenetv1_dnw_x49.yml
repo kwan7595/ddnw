@@ -38,5 +38,5 @@ skip_profiling: False
 graph: dnw
 setting: static
 ##new value for threshold,lambda
-threshold: 0.006
-lambda : 1e-4
+threshold: 0.3
+l : 1e-4

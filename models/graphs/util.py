@@ -79,13 +79,14 @@ class ChooseTopEdges(autograd.Function):
     ## add tau - threshold value to choose edges those weights are higher than t
     @staticmethod
     def forward(ctx, weight, prune_rate,threshold):
-        output = weight
+        output = weight.clone()
         #_, idx = weight.flatten().abs().sort()
         #p = int(prune_rate * weight.numel())
-        flat_oup = output.flatten()
+        abs_out = output.abs() #flatten with absolute values
+        mask = abs_out.le(threshold) # create mask, s.t value>threshold ->false, else true
+        #l1_threshold= torch.norm(output,p=1)/weight.numel()*threshold# ->consider 1l norm as a threshold
         #flat_oup[idx[:p]] = 0
-        mask = nn.Threshold(threshold,0,inplace=True)
-        mask(flat_oup) # inplace
+        output.masked_fill_(mask,0) # replace weight with 0 if True(less or equal to threshold)
         return output
 
     @staticmethod

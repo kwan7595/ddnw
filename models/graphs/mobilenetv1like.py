@@ -83,8 +83,7 @@ class Block(nn.Module):
         # graph ops.
         w = self.get_weight().squeeze().t()
         #num_edges = w.size(0) * w.size(1) * (1 - self.graph.prune_rate)
-        mask = w.ge(FLAGS.threshold)  # ccount edges those weights are over threshold
-        num_edges = torch.masked_select(w, mask).numel()
+        num_edges = w.count_nonzero().item()
         graph_n_macs = num_edges * spatail * spatail
         graph_n_params = num_edges
 
