@@ -13,7 +13,7 @@ if getattr(FLAGS, 'use_dgl', False):
 
 
 class Block(nn.Module):
-    def __init__(self, inp, oup, stride, blocks,threshold):
+    def __init__(self, inp, oup, stride, blocks,alpha):
         super(Block, self).__init__()
 
         self.inp = inp
@@ -25,7 +25,7 @@ class Block(nn.Module):
         self.blocks = blocks
 
         ##threshold for edge selection
-        self.threshold = threshold
+        self.alpha = alpha
 
         self.fast_eval = False
 
@@ -71,7 +71,7 @@ class Block(nn.Module):
             self.oup * self.blocks,
             self.inp,
             self.oup,
-            self.threshold
+            self.alpha
         )
 
         self.prune_rate = prune_rate
@@ -108,7 +108,7 @@ class Block(nn.Module):
         self.has_output = has_output
         self.output_with_input = output_with_input
 
-        # 1. first kill the dead neurons in the the dwconvs
+        # 1. first kill the dead neurons in the dwconvs
         # 1.a downsample
         new_downsample = nn.Sequential(
             nn.Conv2d(
@@ -333,12 +333,12 @@ class Block(nn.Module):
 
 
 class Linear(nn.Module):
-    def __init__(self, inp,threshold):
+    def __init__(self, inp,alpha):
         super(Linear, self).__init__()
         self.inp = inp
         self.oup = FLAGS.output_size
         self.graph = get_graph(FLAGS.prune_rate, inp, FLAGS.output_size)
-        self.threshold = threshold
+        self.alpha = alpha
 
     def get_weight(self):
         return self.graph.get_weight()
@@ -348,10 +348,7 @@ class Linear(nn.Module):
 
     def profiling(self):
         w = self.get_weight().squeeze().t()
-        #num_edges = int(w.size(0) * w.size(1) * (1 - self.graph.prune_rate))
-        #num_edges = w.size(0)*w.size(1)*(len(w)-len(torch.nonzero(w))) #remove edge
-        mask = w.ge(FLAGS.threshold)  # ccount edges those weights are over threshold
-        num_edges = torch.masked_select(w, mask).numel()
+        num_edges = w.count_nonzero().item()
         n_macs = num_edges
         n_params = num_edges
         return n_macs, n_params, None
@@ -374,7 +371,7 @@ class MobileNetV1Like(nn.Module):
 
     def __init__(self):
         super(MobileNetV1Like, self).__init__()
-        self.threshold = FLAGS.threshold#0.012
+        self.alpha = FLAGS.alpha
         self.conv1 = nn.Conv2d(
             3,
             32,
@@ -397,7 +394,7 @@ class MobileNetV1Like(nn.Module):
         blocks = []
         for x in self.cfg:
             inp, oup, stride, layers = x
-            blocks.append(Block(inp, oup, stride, layers,self.threshold))
+            blocks.append(Block(inp, oup, stride, layers,self.alpha))
 
         return nn.Sequential(*blocks)
 

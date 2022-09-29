@@ -45,7 +45,7 @@ downsample_dim: 32
 feature_dim: 100
 layers: 5
 
-graph: dnw
+graph: dnw_no_update
 setting: static
 skip_profiling: True
 alpha: 1

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch import autograd
+import torch.functional as F
 import torch.nn.utils.prune as prune
 from genutil.config import FLAGS
 
@@ -18,10 +18,10 @@ def get_conv(inp, oup):
 
 
 class Graph(nn.Conv2d):
-    def __init__(self, prune_rate, dim_in, dim_out,threshold):
+    def __init__(self, prune_rate, dim_in, dim_out,alpha):
         super(Graph, self).__init__(dim_in, dim_out, kernel_size=1, bias=False)
         self.prune_rate = prune_rate
-        self.threshold = threshold
+        self.alpha = alpha
     def get_weight(self):
         return self.weight
 
@@ -34,7 +34,7 @@ class Graph(nn.Conv2d):
 
     ###code for resource-constraint loss : L1 loss on edge weight, activation with tanh
     def get_weight_loss(self):
-        out = F.tanh(self.weight).abs().sum()  ## weight is randomly initialized -> loss explodes with tanh. ->scaled..
+        out = torch.tanh(self.weight).abs().sum()  ## weight is randomly initialized -> loss explodes with tanh. ->scaled..
         return out
 ########################################################################################################################
 # Random Graph                                                                                                         #
@@ -78,10 +78,11 @@ class ChooseTopEdges(autograd.Function):
     """ Chooses the top edges for the forwards pass but allows gradient flow to all edges in the backwards pass"""
     ## add tau - threshold value to choose edges those weights are higher than t
     @staticmethod
-    def forward(ctx, weight, prune_rate,threshold):
+    def forward(ctx, weight, prune_rate,alpha):
         output = weight.clone()
         #_, idx = weight.flatten().abs().sort()
         #p = int(prune_rate * weight.numel())
+        threshold = weight.abs().mean() * alpha
         abs_out = output.abs() #flatten with absolute values
         mask = abs_out.le(threshold) # create mask, s.t value>threshold ->false, else true
         #l1_threshold= torch.norm(output,p=1)/weight.numel()*threshold# ->consider 1l norm as a threshold
@@ -95,11 +96,11 @@ class ChooseTopEdges(autograd.Function):
 
 
 class DNW(Graph):
-    def __init__(self, prune_rate, dim_in, dim_out,threshold):
-        super().__init__(prune_rate, dim_in, dim_out,threshold)
+    def __init__(self, prune_rate, dim_in, dim_out,alpha):
+        super().__init__(prune_rate, dim_in, dim_out,alpha)
 
     def get_weight(self):
-        return ChooseTopEdges.apply(self.weight, self.prune_rate,self.threshold)
+        return ChooseTopEdges.apply(self.weight, self.prune_rate,self.alpha)
 
 
 ########################################################################################################################
@@ -107,9 +108,9 @@ class DNW(Graph):
 ########################################################################################################################
 
 
-class DNWNoUpdate(Graph):
-    def __init__(self, prune_rate, dim_in, dim_out, in_channels, out_channels):
-        super().__init__(prune_rate, dim_in, dim_out)
+class DNWNoUpdate(Graph): #for just-pruning.
+    def __init__(self, prune_rate, dim_in, dim_out, in_channels, out_channels,alpha):
+        super().__init__(prune_rate, dim_in, dim_out,alpha)
         mask = torch.rand((dim_out, dim_in, 1, 1))
         if FLAGS.setting == "static" and in_channels is not None:
             r = in_channels
@@ -125,12 +126,15 @@ class DNWNoUpdate(Graph):
         self.register_buffer("mask", mask)
 
     def get_weight(self):
-        weight = self.weight * self.mask
-        output = weight.clone()
-        _, idx = weight.flatten().abs().sort()
-        p = int(self.prune_rate * weight.numel())
-        flat_oup = output.flatten()
-        flat_oup[idx[:p]] = 0
+        output = self.weight.clone()
+        # _, idx = weight.flatten().abs().sort()
+        # p = int(prune_rate * weight.numel())
+        threshold = self.weight.abs().mean() * self.alpha
+        abs_out = output.abs()  # flatten with absolute values
+        mask = abs_out.le(threshold)  # create mask, s.t value>threshold ->false, else true
+        # l1_threshold= torch.norm(output,p=1)/weight.numel()*threshold# ->consider 1l norm as a threshold
+        # flat_oup[idx[:p]] = 0
+        output.masked_fill_(mask, 0)  # replace weight with 0 if True(less or equal to threshold)
         return output
 
 
@@ -258,13 +262,13 @@ class Complete(Graph):
 ########################################################################################################################
 
 
-def get_graph(prune_rate, dim_in, dim_out, in_channels=None, out_channels=None,threshold=0.006):
+def get_graph(prune_rate, dim_in, dim_out, in_channels=None, out_channels=None,alpha=FLAGS.alpha):
     if FLAGS.graph == "random":
         return RandomGraph(prune_rate, dim_in, dim_out, in_channels, out_channels)
     elif FLAGS.graph == "dnw":
-        return DNW(prune_rate, dim_in, dim_out,threshold)
+        return DNW(prune_rate, dim_in, dim_out,alpha)
     elif FLAGS.graph == "dnw_no_update":
-        return DNWNoUpdate(prune_rate, dim_in, dim_out, in_channels, out_channels)
+        return DNWNoUpdate(prune_rate, dim_in, dim_out, in_channels, out_channels,alpha)
     elif FLAGS.graph == "reg_td":
         return RegularTargetedDropout(prune_rate, dim_in, dim_out)
     elif FLAGS.graph == "td":

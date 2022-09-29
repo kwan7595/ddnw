@@ -294,7 +294,6 @@ def run_one_epoch(
             optimizer.zero_grad()
             ## resource constraint loss.
             loss = forward_loss(model, criterion, input, target, meters) + (1e-5)*model.module.get_weight_loss()
-            ## maybe profiling code need to be here..
             loss.backward()
             optimizer.step()
 
@@ -568,7 +567,7 @@ def train_val_test():
             flops, params = model_profiling(model.module) #this code is original code. for large_scale apps
             #flops = model.module.profiling()
             writer.add_scalar("flops/flops", flops, epoch)
-            writer.add_scalar("params/params",params,epoch)
+            #writer.add_scalar("params/params",params,epoch)
 
     return
 
