@@ -292,15 +292,19 @@ def run_one_epoch(
             iter += 1
 
             optimizer.zero_grad()
-            ## resource constraint loss.
-            loss = forward_loss(model, criterion, input, target, meters) + (1e-5)*model.module.get_weight_loss()
+            ## resource constraint loss. ->based on target-flops.
+            current_macs, _ = model_profiling(model.module)
+            loss_flops = torch.abs(current_macs/FLAGS.target_flops-1.)
+            loss = forward_loss(model, criterion, input, target, meters) + FLAGS.l*loss_flops
             loss.backward()
             optimizer.step()
 
         else:
             ############################### VAL #################################
 
-            loss = forward_loss(model, criterion, input, target, meters) + (1e-5)*model.module.get_weight_loss()
+            current_macs, _ = model_profiling(model.module)
+            loss_flops = torch.abs(current_macs / FLAGS.target_flops - 1.)
+            loss = forward_loss(model, criterion, input, target, meters) + FLAGS.l * loss_flops
 
         batch_time = time.time() - end
         end = time.time()
@@ -567,7 +571,7 @@ def train_val_test():
             flops, params = model_profiling(model.module) #this code is original code. for large_scale apps
             #flops = model.module.profiling()
             writer.add_scalar("flops/flops", flops, epoch)
-            #writer.add_scalar("params/params",params,epoch)
+            writer.add_scalar("params/params",params,epoch)
 
     return
 

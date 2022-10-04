@@ -37,6 +37,7 @@ prune_rate: 0.51
 skip_profiling: False
 graph: dnw
 setting: static
-##new value for threshold,lambda
-alpha: 1
-l : 1e-4
+##new value for alpha,lambda
+alpha: 1.0 #initial beta value
+target_flops: 1.57e+8
+l : 0.1

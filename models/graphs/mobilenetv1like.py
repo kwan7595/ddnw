@@ -26,7 +26,7 @@ class Block(nn.Module):
 
         ##threshold for edge selection
         self.alpha = alpha
-
+        self.beta = torch.tensor([self.alpha],requires_grad=True)  # learnable parameter beta for target-latency connectivity search
         self.fast_eval = False
 
         self.downsample = nn.Sequential(
@@ -71,7 +71,7 @@ class Block(nn.Module):
             self.oup * self.blocks,
             self.inp,
             self.oup,
-            self.alpha
+            self.beta
         )
 
         self.prune_rate = prune_rate
@@ -405,7 +405,6 @@ class MobileNetV1Like(nn.Module):
         if hasattr(self.linear, "get_weight"):
             out.append(self.linear.get_weight())
         return out
-
     ## get weight loss for resource constraint
     ## fixed to list( per-layer weight loss, return value addition)
     def get_weight_loss(self):
