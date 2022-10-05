@@ -57,9 +57,9 @@ def model_profiling(model):
     n_macs += linear_n_macs
     n_params += linear_n_params
 
-    print(
-        "Pararms: {:,}".format(n_params).rjust(45, " ")
-        + "Macs: {:,}".format(n_macs).rjust(45, " ")
-    )
+    # print(
+    #     "Pararms: {:,}".format(n_params).rjust(45, " ")
+    #     + "Macs: {:,}".format(n_macs).rjust(45, " ")
+    # )
 
     return n_macs, n_params

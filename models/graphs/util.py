@@ -18,10 +18,10 @@ def get_conv(inp, oup):
 
 
 class Graph(nn.Conv2d):
-    def __init__(self, prune_rate, dim_in, dim_out,beta):
+    def __init__(self, prune_rate, dim_in, dim_out,alpha):
         super(Graph, self).__init__(dim_in, dim_out, kernel_size=1, bias=False)
         self.prune_rate = prune_rate
-        self.beta = beta
+        self.alpha=alpha
     def get_weight(self):
         return self.weight
 
@@ -78,11 +78,11 @@ class ChooseTopEdges(autograd.Function):
     """ Chooses the top edges for the forwards pass but allows gradient flow to all edges in the backwards pass"""
     ## add tau - threshold value to choose edges those weights are higher than t
     @staticmethod
-    def forward(ctx, weight, prune_rate,beta):
+    def forward(ctx, weight, prune_rate,alpha):
         output = weight.clone()
         #_, idx = weight.flatten().abs().sort()
         #p = int(prune_rate * weight.numel())
-        threshold = weight.abs().mean() * beta
+        threshold = weight.abs().mean() * alpha
         abs_out = output.abs() #flatten with absolute values
         mask = abs_out.le(threshold) # create mask, s.t value>threshold ->false, else true
         #l1_threshold= torch.norm(output,p=1)/weight.numel()*threshold# ->consider 1l norm as a threshold
@@ -100,7 +100,7 @@ class DNW(Graph):
         super().__init__(prune_rate, dim_in, dim_out,beta)
 
     def get_weight(self):
-        return ChooseTopEdges.apply(self.weight, self.prune_rate,self.beta)
+        return ChooseTopEdges.apply(self.weight, self.prune_rate,self.alpha)
 
 
 ########################################################################################################################
@@ -109,8 +109,8 @@ class DNW(Graph):
 
 
 class DNWNoUpdate(Graph): #for just-pruning.
-    def __init__(self, prune_rate, dim_in, dim_out,beta, in_channels, out_channels):
-        super().__init__(prune_rate, dim_in, dim_out,beta)
+    def __init__(self, prune_rate, dim_in, dim_out, in_channels, out_channels,alpha):
+        super().__init__(prune_rate, dim_in, dim_out,alpha)
         mask = torch.rand((dim_out, dim_in, 1, 1))
         if FLAGS.setting == "static" and in_channels is not None:
             r = in_channels
@@ -262,13 +262,13 @@ class Complete(Graph):
 ########################################################################################################################
 
 
-def get_graph(prune_rate, dim_in, dim_out, beta,in_channels=None, out_channels=None):
+def get_graph(prune_rate, dim_in, dim_out,in_channels=None, out_channels=None,alpha=FLAGS.alpha):
     if FLAGS.graph == "random":
         return RandomGraph(prune_rate, dim_in, dim_out, in_channels, out_channels)
     elif FLAGS.graph == "dnw":
-        return DNW(prune_rate, dim_in, dim_out,beta)
+        return DNW(prune_rate, dim_in, dim_out,alpha)
     elif FLAGS.graph == "dnw_no_update":
-        return DNWNoUpdate(prune_rate, dim_in, dim_out, in_channels, out_channels,beta)
+        return DNWNoUpdate(prune_rate, dim_in, dim_out, in_channels, out_channels,alpha)
     elif FLAGS.graph == "reg_td":
         return RegularTargetedDropout(prune_rate, dim_in, dim_out)
     elif FLAGS.graph == "td":

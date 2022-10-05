@@ -26,7 +26,6 @@ class Block(nn.Module):
 
         ##threshold for edge selection
         self.alpha = alpha
-        self.beta = torch.tensor([self.alpha],requires_grad=True)  # learnable parameter beta for target-latency connectivity search
         self.fast_eval = False
 
         self.downsample = nn.Sequential(
@@ -71,7 +70,7 @@ class Block(nn.Module):
             self.oup * self.blocks,
             self.inp,
             self.oup,
-            self.beta
+            self.alpha
         )
 
         self.prune_rate = prune_rate
@@ -371,7 +370,7 @@ class MobileNetV1Like(nn.Module):
 
     def __init__(self):
         super(MobileNetV1Like, self).__init__()
-        self.alpha = FLAGS.alpha
+        self.alpha = FLAGS.alpha ## need to implement learnable param
         self.conv1 = nn.Conv2d(
             3,
             32,

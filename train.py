@@ -293,7 +293,7 @@ def run_one_epoch(
 
             optimizer.zero_grad()
             ## resource constraint loss. ->based on target-flops.
-            current_macs, _ = model_profiling(model.module)
+            current_macs, current_params = model_profiling(model.module)
             loss_flops = torch.abs(current_macs/FLAGS.target_flops-1.)
             loss = forward_loss(model, criterion, input, target, meters) + FLAGS.l*loss_flops
             loss.backward()
@@ -302,7 +302,7 @@ def run_one_epoch(
         else:
             ############################### VAL #################################
 
-            current_macs, _ = model_profiling(model.module)
+            current_macs, current_params = model_profiling(model.module)
             loss_flops = torch.abs(current_macs / FLAGS.target_flops - 1.)
             loss = forward_loss(model, criterion, input, target, meters) + FLAGS.l * loss_flops
 
@@ -314,6 +314,10 @@ def run_one_epoch(
                 "Epoch: [{}][{}/{}]\tTime {:.3f}\tData {:.3f}\tLoss {:.3f}\t".format(
                     epoch, batch_idx, len(loader), batch_time, data_time, loss.item()
                 )
+            )
+            print(
+                "Pararms: {:,}".format(current_params).rjust(45, " ")
+                + "Macs: {:,}".format(current_macs).rjust(45, " ")
             )
 
     # Log.
