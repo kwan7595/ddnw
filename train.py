@@ -295,6 +295,7 @@ def run_one_epoch(
             ## resource constraint loss. ->based on target-flops.
             current_macs, current_params = model_profiling(model.module)
             loss_flops = torch.abs(current_macs/FLAGS.target_flops-1.)
+            alphas = model.module.get_alphas()
             loss = forward_loss(model, criterion, input, target, meters) + FLAGS.l*loss_flops
             loss.backward()
             optimizer.step()
@@ -311,13 +312,16 @@ def run_one_epoch(
 
         if (batch_idx % 10) == 0:
             print(
-                "Epoch: [{}][{}/{}]\tTime {:.3f}\tData {:.3f}\tLoss {:.3f}\t".format(
-                    epoch, batch_idx, len(loader), batch_time, data_time, loss.item()
+                "Epoch: [{}][{}/{}]\tTime {:.3f}\tData {:.3f}\tLoss {:.3f}\tFlops_loss {:.3f} ".format(
+                    epoch, batch_idx, len(loader), batch_time, data_time, loss.item(),loss_flops.item()
                 )
             )
             print(
                 "Pararms: {:,}".format(current_params).rjust(45, " ")
                 + "Macs: {:,}".format(current_macs).rjust(45, " ")
+            )
+            print(
+                "Alphas = ",alphas
             )
 
     # Log.
@@ -337,6 +341,8 @@ def run_one_epoch(
     # Visualize the adjacency matrix.
     if hasattr(model.module, "get_weight"):
         weights = model.module.get_weight()
+        for i,w in enumerate(weights):
+            writer.add_histogram(f'/weight_distribution_layer={i+1}',w)
         if type(weights) is list:
             for i, w in enumerate(weights):
                 w = w.squeeze().t()
@@ -571,11 +577,13 @@ def train_val_test():
                 },
                 os.path.join(checkpoint_dir, "epoch_{}.pt".format(epoch)),
             )
-
+            alphas = model.module.get_alphas()
             flops, params = model_profiling(model.module) #this code is original code. for large_scale apps
             #flops = model.module.profiling()
             writer.add_scalar("flops/flops", flops, epoch)
             writer.add_scalar("params/params",params,epoch)
+            for i,alpha in enumerate(alphas):
+                writer.add_scalar(f'layer{i+1} alpha=',alpha)
 
     return
 

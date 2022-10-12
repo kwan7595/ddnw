@@ -18,10 +18,10 @@ def get_conv(inp, oup):
 
 
 class Graph(nn.Conv2d):
-    def __init__(self, prune_rate, dim_in, dim_out,alpha):
+    def __init__(self, prune_rate, dim_in, dim_out):
         super(Graph, self).__init__(dim_in, dim_out, kernel_size=1, bias=False)
         self.prune_rate = prune_rate
-        self.alpha=alpha
+        self.alpha=nn.Parameter(torch.tensor(FLAGS.alpha),requires_grad=True)
     def get_weight(self):
         return self.weight
 
@@ -35,6 +35,9 @@ class Graph(nn.Conv2d):
     ###code for resource-constraint loss : L1 loss on edge weight, activation with tanh
     def get_weight_loss(self):
         out = torch.tanh(self.weight).abs().sum()  ## weight is randomly initialized -> loss explodes with tanh. ->scaled..
+        return out
+    def get_alpha(self): # return learnable parameter alpha value
+        out = self.alpha.clone().detach().cpu()
         return out
 ########################################################################################################################
 # Random Graph                                                                                                         #
@@ -96,8 +99,8 @@ class ChooseTopEdges(autograd.Function):
 
 
 class DNW(Graph):
-    def __init__(self, prune_rate, dim_in, dim_out,beta):
-        super().__init__(prune_rate, dim_in, dim_out,beta)
+    def __init__(self, prune_rate, dim_in, dim_out):
+        super().__init__(prune_rate, dim_in, dim_out)
 
     def get_weight(self):
         return ChooseTopEdges.apply(self.weight, self.prune_rate,self.alpha)
@@ -109,8 +112,8 @@ class DNW(Graph):
 
 
 class DNWNoUpdate(Graph): #for just-pruning.
-    def __init__(self, prune_rate, dim_in, dim_out, in_channels, out_channels,alpha):
-        super().__init__(prune_rate, dim_in, dim_out,alpha)
+    def __init__(self, prune_rate, dim_in, dim_out, in_channels, out_channels):
+        super().__init__(prune_rate, dim_in, dim_out)
         mask = torch.rand((dim_out, dim_in, 1, 1))
         if FLAGS.setting == "static" and in_channels is not None:
             r = in_channels
@@ -129,7 +132,7 @@ class DNWNoUpdate(Graph): #for just-pruning.
         output = self.weight.clone()
         # _, idx = weight.flatten().abs().sort()
         # p = int(prune_rate * weight.numel())
-        threshold = self.weight.abs().mean() * self.beta
+        threshold = self.weight.abs().mean()
         abs_out = output.abs()  # flatten with absolute values
         mask = abs_out.le(threshold)  # create mask, s.t value>threshold ->false, else true
         # l1_threshold= torch.norm(output,p=1)/weight.numel()*threshold# ->consider 1l norm as a threshold
@@ -262,13 +265,13 @@ class Complete(Graph):
 ########################################################################################################################
 
 
-def get_graph(prune_rate, dim_in, dim_out,in_channels=None, out_channels=None,alpha=FLAGS.alpha):
+def get_graph(prune_rate, dim_in, dim_out,in_channels=None, out_channels=None):
     if FLAGS.graph == "random":
         return RandomGraph(prune_rate, dim_in, dim_out, in_channels, out_channels)
     elif FLAGS.graph == "dnw":
-        return DNW(prune_rate, dim_in, dim_out,alpha)
+        return DNW(prune_rate, dim_in, dim_out)
     elif FLAGS.graph == "dnw_no_update":
-        return DNWNoUpdate(prune_rate, dim_in, dim_out, in_channels, out_channels,alpha)
+        return DNWNoUpdate(prune_rate, dim_in, dim_out, in_channels, out_channels)
     elif FLAGS.graph == "reg_td":
         return RegularTargetedDropout(prune_rate, dim_in, dim_out)
     elif FLAGS.graph == "td":

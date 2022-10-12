@@ -13,7 +13,7 @@ if getattr(FLAGS, 'use_dgl', False):
 
 
 class Block(nn.Module):
-    def __init__(self, inp, oup, stride, blocks,alpha):
+    def __init__(self, inp, oup, stride, blocks):
         super(Block, self).__init__()
 
         self.inp = inp
@@ -24,8 +24,6 @@ class Block(nn.Module):
         self.stride = stride
         self.blocks = blocks
 
-        ##threshold for edge selection
-        self.alpha = alpha
         self.fast_eval = False
 
         self.downsample = nn.Sequential(
@@ -70,7 +68,6 @@ class Block(nn.Module):
             self.oup * self.blocks,
             self.inp,
             self.oup,
-            self.alpha
         )
 
         self.prune_rate = prune_rate
@@ -183,6 +180,8 @@ class Block(nn.Module):
     def get_weight_loss(self):
         return self.graph.get_weight_loss()
 
+    def get_alpha(self):
+        return self.graph.get_alpha()
     def forward(self, x):
         if self.fast_eval:
             return (
@@ -332,19 +331,19 @@ class Block(nn.Module):
 
 
 class Linear(nn.Module):
-    def __init__(self, inp,alpha):
+    def __init__(self, inp):
         super(Linear, self).__init__()
         self.inp = inp
         self.oup = FLAGS.output_size
         self.graph = get_graph(FLAGS.prune_rate, inp, FLAGS.output_size)
-        self.alpha = alpha
 
     def get_weight(self):
         return self.graph.get_weight()
 
     def get_weight_loss(self):
         return self.graph.get_weight_loss()
-
+    def get_alpha(self):
+        return self.graph.get_alpha()
     def profiling(self):
         w = self.get_weight().squeeze().t()
         num_edges = w.count_nonzero().item()
@@ -370,7 +369,6 @@ class MobileNetV1Like(nn.Module):
 
     def __init__(self):
         super(MobileNetV1Like, self).__init__()
-        self.alpha = FLAGS.alpha ## need to implement learnable param
         self.conv1 = nn.Conv2d(
             3,
             32,
@@ -393,7 +391,7 @@ class MobileNetV1Like(nn.Module):
         blocks = []
         for x in self.cfg:
             inp, oup, stride, layers = x
-            blocks.append(Block(inp, oup, stride, layers,self.alpha))
+            blocks.append(Block(inp, oup, stride, layers))
 
         return nn.Sequential(*blocks)
 
@@ -413,7 +411,13 @@ class MobileNetV1Like(nn.Module):
         if hasattr(self.linear, "get_weight"):
             out+=layer.get_weight_loss()
         return out
-
+    def get_alphas(self): # get alpha values
+        out = []
+        for layer in self.layers:
+            out.append(layer.get_alpha())
+        if hasattr(self.linear,"get_alpha"):
+            out.append(self.linear.get_alpha())
+        return out
     def forward(self, x):
         out = self.conv1(x)
         out = self.layers(out)
