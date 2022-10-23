@@ -21,7 +21,7 @@ class Graph(nn.Conv2d):
     def __init__(self, prune_rate, dim_in, dim_out):
         super(Graph, self).__init__(dim_in, dim_out, kernel_size=1, bias=False)
         self.prune_rate = prune_rate
-        self.alpha=nn.Parameter(torch.tensor(FLAGS.alpha),requires_grad=True)
+        self.alpha=nn.Parameter(torch.tensor(FLAGS.alpha),requires_grad=False)
     def get_weight(self):
         return self.weight
 
@@ -105,6 +105,8 @@ class DNW(Graph):
     def get_weight(self):
         return ChooseTopEdges.apply(self.weight, self.prune_rate,self.alpha)
 
+    def get_original_weight(self):
+        return self.weight
 
 ########################################################################################################################
 # DNW without an update rule on the backwards pass                                                                     #

@@ -18,7 +18,7 @@ import torch.multiprocessing
 torch.multiprocessing.set_sharing_strategy("file_system")
 
 from genutil.config import FLAGS
-from genutil.model_profiling import model_profiling
+from genutil.model_profiling import model_profiling,model_expected_profiling
 
 from tensorboardX import SummaryWriter
 
@@ -293,17 +293,18 @@ def run_one_epoch(
 
             optimizer.zero_grad()
             ## resource constraint loss. ->based on target-flops.
-            current_macs, current_params = model_profiling(model.module)
+            current_macs, current_params = model_expected_profiling(model.module)
             loss_flops = torch.abs(current_macs/FLAGS.target_flops-1.)
             alphas = model.module.get_alphas()
-            loss = forward_loss(model, criterion, input, target, meters) + FLAGS.l*loss_flops
+            loss = forward_loss(model, criterion, input, target, meters)+FLAGS.l*loss_flops
             loss.backward()
             optimizer.step()
 
         else:
             ############################### VAL #################################
 
-            current_macs, current_params = model_profiling(model.module)
+            current_macs, current_params = model_expected_profiling(model.module)
+            alphas = model.module.get_alphas()
             loss_flops = torch.abs(current_macs / FLAGS.target_flops - 1.)
             loss = forward_loss(model, criterion, input, target, meters) + FLAGS.l * loss_flops
 
@@ -341,8 +342,11 @@ def run_one_epoch(
     # Visualize the adjacency matrix.
     if hasattr(model.module, "get_weight"):
         weights = model.module.get_weight()
+        original_weight = model.module.get_original_weight
         for i,w in enumerate(weights):
-            writer.add_histogram(f'/weight_distribution_layer={i+1}',w)
+            writer.add_histogram(f'/weight_distribution_layer={i+1}',w,epoch)
+        for i,ow in enumerate(original_weight):
+            writer.add_histogram(f'/original_weight_distribution_layer={i + 1}', ow, epoch)
         if type(weights) is list:
             for i, w in enumerate(weights):
                 w = w.squeeze().t()
@@ -583,7 +587,7 @@ def train_val_test():
             writer.add_scalar("flops/flops", flops, epoch)
             writer.add_scalar("params/params",params,epoch)
             for i,alpha in enumerate(alphas):
-                writer.add_scalar(f'layer{i+1} alpha=',alpha)
+                writer.add_scalar(f'layer{i+1} alpha=',alpha,epoch)
 
     return
 

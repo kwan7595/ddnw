@@ -98,6 +98,26 @@ class Block(nn.Module):
 
         return n_macs, n_params, input_with_output, output_with_input
 
+    def expected_profiling(self,spatail): # function to calcuate expected latency with sigmoid continuous relaxation
+        w = self.get_weight().squeeze().t()
+        mean_weight = w.abs().mean() * FLAGS.alpha
+        expected_edge = torch.sigmoid(torch.sub(w.abs(),mean_weight).abs())
+
+        has_output = w.abs().sum(1) != 0
+        has_input = w.abs().sum(0) != 0
+        input_with_output = has_output[: self.inp].sum()
+        output_with_input = has_input[-self.oup:].sum()
+
+        expected_graph_n_macs = torch.sum(torch.mul(expected_edge,spatail*spatail))
+        expected_graph_n_params = torch.sum(expected_edge)
+
+        expected_node_n_macs = torch.sum(torch.mul(expected_edge,spatail * spatail * 3 * 3))
+        expected_node_n_params = torch.sum(torch.mul(expected_edge,3*3))
+
+        expected_n_macs = int(expected_node_n_macs + expected_graph_n_macs)
+        expected_n_params = int(expected_node_n_params + expected_graph_n_params)
+
+        return expected_n_macs, expected_n_params, input_with_output, output_with_input
     def prepare_for_fast_eval(self, input_with_output, has_output, output_with_input):
         self.fast_eval = True
         self.input_with_output = input_with_output
@@ -176,6 +196,8 @@ class Block(nn.Module):
     def get_weight(self):
         return self.graph.get_weight()
 
+    def get_original_weight(self):
+        return self.graph.get_original_weight()
     ## weight loss for resource
     def get_weight_loss(self):
         return self.graph.get_weight_loss()
@@ -339,7 +361,8 @@ class Linear(nn.Module):
 
     def get_weight(self):
         return self.graph.get_weight()
-
+    def get_original_weight(self):
+        return self.graph.get_original_weight()
     def get_weight_loss(self):
         return self.graph.get_weight_loss()
     def get_alpha(self):
@@ -402,6 +425,12 @@ class MobileNetV1Like(nn.Module):
         if hasattr(self.linear, "get_weight"):
             out.append(self.linear.get_weight())
         return out
+    def get_original_weight(self):
+        out = []
+        for layer in self.layers:
+            out.append(layer.get_original_weight())
+        if hasattr(self.linear,"get_original_weight"):
+            out.append(self.linear.get_original_weight())
     ## get weight loss for resource constraint
     ## fixed to list( per-layer weight loss, return value addition)
     def get_weight_loss(self):
