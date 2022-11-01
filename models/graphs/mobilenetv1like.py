@@ -409,7 +409,6 @@ class MobileNetV1Like(nn.Module):
             self.linear = nn.Linear(1024, FLAGS.output_size)
         self.relu = nn.ReLU(inplace=True)
         self.bn = nn.BatchNorm2d(1024)
-
     def _make_layers(self):
         blocks = []
         for x in self.cfg:

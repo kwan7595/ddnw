@@ -48,4 +48,6 @@ layers: 5
 graph: dnw
 setting: static
 skip_profiling: True
-alpha: 1
+alpha : 1
+threshold : 0.01
+max_param : 3.0e+4
