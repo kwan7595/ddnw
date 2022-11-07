@@ -286,8 +286,30 @@ class StaticNeuralGraph(nn.Module):
     def get_weight_loss(self):
         return self.graph.get_weight_loss()
     ## profiling for small-scale static-neural graph with dnw
-    def profiling(self):
-        return self.graph.get_flops_loss()
+    #def expected_profiling(self): ## need to change names
+        # weight = self.graph.get_original_weight().squeeze().t()
+        # sigmoid = nn.Sigmoid()
+        # edge_prob = sigmoid(weight.abs() - FLAGS.threshold)
+        # graph_n_params = torch.sum(edge_prob)
+        # out_node_prob = torch.prod(1 - edge_prob, 0)
+        # expected_node_n_params = torch.sum(((1 - out_node_prob) * 3 * 3))  # expected param
+        # n_params = expected_node_n_params + graph_n_params
+        #return n_params
+
+    def profiling(self): # real-profiling(no approximation)
+        w = self.graph.get_weight().squeeze().t()
+        num_edges = w.count_nonzero().item()
+        graph_n_params = num_edges
+
+        has_output = (w.abs().sum(1)!=0)
+        has_input = (w.abs().sum(0)!=0)
+
+        num_nodes_with_ops = has_output.sum()
+        node_n_params = num_nodes_with_ops * 3 * 3
+
+        n_params = int(node_n_params + graph_n_params)
+
+        return n_params
 
     def forward(self, x):
         x = torch.cat(

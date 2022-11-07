@@ -99,23 +99,23 @@ class Block(nn.Module):
         return n_macs, n_params, input_with_output, output_with_input
 
     def expected_profiling(self,spatail): # function to calcuate expected latency with sigmoid continuous relaxation
-        w = self.get_weight().squeeze().t()
-        mean_weight = w.abs().mean() * FLAGS.alpha
-        expected_edge = torch.sigmoid(torch.sub(w.abs(),mean_weight).abs())
-
+        w = self.get_original_weight().squeeze().t()
+        s = nn.Sigmoid()
+        edge_prob = s(w.abs()-FLAGS.threshold)
         has_output = w.abs().sum(1) != 0
         has_input = w.abs().sum(0) != 0
         input_with_output = has_output[: self.inp].sum()
         output_with_input = has_input[-self.oup:].sum()
 
-        expected_graph_n_macs = torch.sum(torch.mul(expected_edge,spatail*spatail))
-        expected_graph_n_params = torch.sum(expected_edge)
+        expected_graph_n_macs = torch.sum(torch.mul(edge_prob,spatail*spatail))
+        expected_graph_n_params = torch.sum(edge_prob)
 
-        expected_node_n_macs = torch.sum(torch.mul(expected_edge,spatail * spatail * 3 * 3))
-        expected_node_n_params = torch.sum(torch.mul(expected_edge,3*3))
+        out_node_prob = torch.prod(1-edge_prob,0)
+        expected_node_n_macs = torch.mul(out_node_prob,3*3*spatail*spatail)
+        expected_node_n_params = torch.mul(out_node_prob, 3 * 3 )
 
-        expected_n_macs = int(expected_node_n_macs + expected_graph_n_macs)
-        expected_n_params = int(expected_node_n_params + expected_graph_n_params)
+        expected_n_macs = expected_node_n_macs + expected_graph_n_macs
+        expected_n_params = expected_node_n_params + expected_graph_n_params
 
         return expected_n_macs, expected_n_params, input_with_output, output_with_input
     def prepare_for_fast_eval(self, input_with_output, has_output, output_with_input):
@@ -367,7 +367,7 @@ class Linear(nn.Module):
         return self.graph.get_weight_loss()
     def get_alpha(self):
         return self.graph.get_alpha()
-    def profiling(self):
+    def profiling(self): # do we need expected profiling here?
         w = self.get_weight().squeeze().t()
         num_edges = w.count_nonzero().item()
         n_macs = num_edges

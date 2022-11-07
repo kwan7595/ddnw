@@ -11,20 +11,23 @@ def get_conv(inp, oup):
         inp, oup, kernel_size=3, stride=1, padding=1, bias=False, groups=inp
     )
 
-class Flops_Loss(autograd.Function): #class for flops-based loss implementation, autograd.
-    @staticmethod
-    def forward(ctx,weight,max_params,threshold):
+
+class Flops_Loss(nn.Module): #class for flops-based loss implementation,
+    def __init__(self,threshold,max_params):
+        super(Flops_Loss,self).__init__()
+        self.threshold = threshold
+        self.max_params = max_params
+    def forward(self,weight):
         sigmoid = nn.Sigmoid()
-        edge_prob = sigmoid(weight.abs() -threshold)
+        edge_prob = sigmoid(weight.abs() - self.threshold)
         graph_n_params = edge_prob.sum()
         out_node_prob = torch.prod(1 - edge_prob, 0)
         expected_node_n_params = ((1 - out_node_prob) * 3 * 3).sum()  # expected param
-        n_params = int(expected_node_n_params + graph_n_params)
+        n_params = expected_node_n_params + graph_n_params
         g = nn.Softplus()
-        return g(torch.tensor(n_params-max_params))
-    @staticmethod
-    def backward(ctx,grad_output):
-        return grad_output,None,None
+        loss_flops = g(n_params-self.max_params)/self.max_params
+        #print(edge_prob.shape,edge_prob.mean(),out_node_prob.shape,n_params)
+        return loss_flops
 ########################################################################################################################
 # Graph Superclass                                                                                                     #
 ########################################################################################################################
@@ -123,7 +126,7 @@ class DNW(Graph):
         return self.weight
 
     def get_flops_loss(self):
-        return Flops_Loss.apply(self.weight,FLAGS.max_param,FLAGS.threshold)
+        return Flops_loss(self.weight)
 ########################################################################################################################
 # DNW without an update rule on the backwards pass                                                                     #
 ########################################################################################################################

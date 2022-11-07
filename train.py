@@ -19,7 +19,7 @@ torch.multiprocessing.set_sharing_strategy("file_system")
 
 from genutil.config import FLAGS
 from genutil.model_profiling import model_profiling,model_expected_profiling
-
+from models.graphs.util import Flops_Loss
 from tensorboardX import SummaryWriter
 
 best_acc1 = 0
@@ -185,6 +185,7 @@ def get_meters(phase, model):
     """util function for meters"""
     meters = {}
     meters["CELoss"] = ScalarMeter("{}_CELoss".format(phase))
+    meters["FlopsLoss"] = ScalarMeter("{}_FLLoss".format(phase))
     for k in FLAGS.topk:
         meters["top{}_accuracy".format(k)] = ScalarMeter(
             "{}_top{}_accuracy".format(phase, k)
@@ -235,12 +236,17 @@ def forward_loss(model, criterion, input, target, meter):
         meter["top{}_accuracy".format(k)].cache_list(accuracy_list)
     return loss
 
+def get_flops_loss(weight,flops_criterion,meter):
+    fl = flops_criterion(weight)
+    meter["FlopsLoss"].cache(fl.cpu().detach().numpy())
+    return fl
 
 def run_one_epoch(
     epoch,
     loader,
     model,
     criterion,
+    flops_criterion,
     optimizer,
     meters,
     phase="train",
@@ -257,7 +263,7 @@ def run_one_epoch(
     train = phase == "train"
     if train:
         model.train()
-    else:
+    else: #validation phase ->bilevel?
         model.eval()
 
     if train and FLAGS.lr_scheduler == "linear_decaying":
@@ -292,36 +298,33 @@ def run_one_epoch(
             iter += 1
 
             optimizer.zero_grad()
-            ## resource constraint loss. ->based on target-flops.
-            #current_macs, current_params = model_expected_profiling(model.module)
-            flops_loss = model_profiling(model.module)
-            #loss_flops = torch.abs(current_macs/FLAGS.target_flops-1.)
-            #alphas = model.module.get_alphas()
-            #mac_loss = nn.ReLU()
-            loss = forward_loss(model, criterion, input, target, meters) + flops_loss
+            edge_weight = model_profiling(model.module)
+            flops_loss = get_flops_loss(edge_weight,flops_criterion,meters)
+            loss = forward_loss(model, criterion, input, target, meters) + flops_loss # optimize w.r.t. CE Loss, flops loss
             loss.backward()
             optimizer.step()
 
         else:
             ############################### VAL #################################
-
+            #bilevel optimization -> w.r.t. Flops loss
             #current_macs, current_params = model_expected_profiling(model.module)
-            flops_loss = model_profiling(model.module)
             #alphas = model.module.get_alphas()
             #loss_flops = torch.abs(current_macs / FLAGS.target_flops - 1.)
-            loss = forward_loss(model, criterion, input, target, meters) + flops_loss
+            edge_weight = model_profiling(model.module)
+            flops_loss = get_flops_loss(edge_weight,flops_criterion,meters)
+            loss = forward_loss(model, criterion, input, target, meters)
 
         batch_time = time.time() - end
         end = time.time()
-
+        n_params = model.module.profiling()
         if (batch_idx % 10) == 0:
             print(
-                "Epoch: [{}][{}/{}]\tTime {:.3f}\tData {:.3f}\tLoss {:.3f}\t ".format(
-                    epoch, batch_idx, len(loader), batch_time, data_time, loss.item(),
+                "Epoch: [{}][{}/{}]\tTime {:.3f}\tData {:.3f}\tLoss {:.3f}\t Flops_loss {:.3f} ".format(
+                    epoch, batch_idx, len(loader), batch_time, data_time, loss.item(), flops_loss.item()
                 )
             )
             print(
-                "Pararms: {:,}".format(flops_loss.item()).rjust(45, " ")
+                "Pararms: {:,}".format(int(n_params)).rjust(45, " ")
             )
             # print(
             #     "Alphas = ",alphas
@@ -344,7 +347,7 @@ def run_one_epoch(
     # Visualize the adjacency matrix.
     if hasattr(model.module, "get_weight"):
         weights = model.module.get_weight()
-        original_weight = model.module.get_original_weight
+        #original_weight = model.module.get_original_weight
         for i,w in enumerate(weights):
             writer.add_histogram(f'/weight_distribution_layer={i+1}',w,epoch)
         # for i,ow in enumerate(original_weight):
@@ -397,7 +400,7 @@ def train_val_test():
     val_loader = data.val_loader
 
     criterion = torch.nn.CrossEntropyLoss(reduction="none").to(device)
-
+    flops_criterion = Flops_Loss(FLAGS.threshold,FLAGS.max_params).to(device)
     print("=> creating model '{}'".format(FLAGS.model))
     ##add threshold as param.
     model = getter("model")()
@@ -510,6 +513,7 @@ def train_val_test():
                 val_loader,
                 model,
                 criterion,
+                flops_criterion,
                 optimizer,
                 val_meters,
                 phase="val",
@@ -541,6 +545,7 @@ def train_val_test():
             train_loader,
             model,
             criterion,
+            flops_criterion,
             optimizer,
             train_meters,
             phase="train",
@@ -556,6 +561,7 @@ def train_val_test():
                 val_loader,
                 model,
                 criterion,
+                flops_criterion,
                 optimizer,
                 val_meters,
                 phase="val",
@@ -587,7 +593,7 @@ def train_val_test():
             #flops, params = model_profiling(model.module) #this code is original code. for large_scale apps
             params = model.module.profiling()
             #writer.add_scalar("flops/flops", flops, epoch)
-            writer.add_scalar("params/params",params,epoch)
+            writer.add_scalar("params/params",int(params),epoch)
             #for i,alpha in enumerate(alphas):
                 #writer.add_scalar(f'layer{i+1} alpha=',alpha,epoch)
 
