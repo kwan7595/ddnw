@@ -25,7 +25,7 @@ class Flops_Loss(nn.Module): #class for flops-based loss implementation,
         expected_node_n_params = ((1 - out_node_prob) * 3 * 3).sum()  # expected param
         n_params = expected_node_n_params + graph_n_params
         g = nn.Softplus()
-        loss_flops = g(n_params-self.max_params)/self.max_params
+        loss_flops = g(n_params-self.max_params)
         #print(edge_prob.shape,edge_prob.mean(),out_node_prob.shape,n_params)
         return loss_flops
 ########################################################################################################################

@@ -237,7 +237,7 @@ def forward_loss(model, criterion, input, target, meter):
     return loss
 
 def get_flops_loss(weight,flops_criterion,meter):
-    fl = flops_criterion(weight)
+    fl = flops_criterion(weight) * FLAGS.beta
     meter["FlopsLoss"].cache(fl.cpu().detach().numpy())
     return fl
 
@@ -289,11 +289,7 @@ def run_one_epoch(
         if train:
 
             ############################## Train ################################
-            if FLAGS.lr_scheduler == "linear_decaying":
-                for param_group in optimizer.param_groups:
-                    param_group["lr"] -= linear_decaying_per_step
-            elif FLAGS.lr_scheduler == "cosine":
-                scheduler.step()
+
 
             iter += 1
 
@@ -303,6 +299,11 @@ def run_one_epoch(
             loss = forward_loss(model, criterion, input, target, meters) + flops_loss # optimize w.r.t. CE Loss, flops loss
             loss.backward()
             optimizer.step()
+            if FLAGS.lr_scheduler == "linear_decaying":
+                for param_group in optimizer.param_groups:
+                    param_group["lr"] -= linear_decaying_per_step
+            elif FLAGS.lr_scheduler == "cosine":
+                scheduler.step()
 
         else:
             ############################### VAL #################################
