@@ -283,32 +283,28 @@ class StaticNeuralGraph(nn.Module):
     def get_original_weight(self):
         return self.graph.get_original_weight()
     ### get edge weight loss
-    def get_weight_loss(self):
-        return self.graph.get_weight_loss()
-    ## profiling for small-scale static-neural graph with dnw
-    #def expected_profiling(self): ## need to change names
-        # weight = self.graph.get_original_weight().squeeze().t()
-        # sigmoid = nn.Sigmoid()
-        # edge_prob = sigmoid(weight.abs() - FLAGS.threshold)
-        # graph_n_params = torch.sum(edge_prob)
-        # out_node_prob = torch.prod(1 - edge_prob, 0)
-        # expected_node_n_params = torch.sum(((1 - out_node_prob) * 3 * 3))  # expected param
-        # n_params = expected_node_n_params + graph_n_params
-        #return n_params
+    def get_block_rng(self):
+        return self.block_rng
 
-    def profiling(self): # real-profiling(no approximation)
-        w = self.graph.get_weight().squeeze().t()
-        num_edges = w.count_nonzero().item()
-        graph_n_params = num_edges
-
-        has_output = (w.abs().sum(1)!=0)
-        has_input = (w.abs().sum(0)!=0)
-
-        num_nodes_with_ops = has_output.sum()
+    def profiling(self): # real-profiling(no approximation), considering small-scale edge weight matrix
+        w = self.graph.get_weight().squeeze()
+        num_edges = 0
+        graph_n_params = 0
+        num_nodes_with_ops = 0
+        for i in range(self.layers):
+            layer_weight=w[
+            min(self.block_rng[i + 1], self.dim - self.feature_dim):,
+            self.block_rng[i]: self.block_rng[i + 1],
+            ]
+            num_edge = layer_weight.count_nonzero().item()
+            num_edges+=num_edge
+            graph_n_params+=num_edge
+            has_output = layer_weight.abs().sum(1)!=0
+            has_input = layer_weight.abs().sum(0)!=0
+            num_nodes_with_ops +=has_output.sum()
         node_n_params = num_nodes_with_ops * 3 * 3
 
         n_params = int(node_n_params + graph_n_params)
-
         return n_params
 
     def forward(self, x):

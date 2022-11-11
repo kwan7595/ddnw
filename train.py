@@ -21,7 +21,6 @@ from genutil.config import FLAGS
 from genutil.model_profiling import model_profiling,model_expected_profiling
 from models.graphs.util import Flops_Loss
 from tensorboardX import SummaryWriter
-
 best_acc1 = 0
 writer = None
 
@@ -236,10 +235,12 @@ def forward_loss(model, criterion, input, target, meter):
         meter["top{}_accuracy".format(k)].cache_list(accuracy_list)
     return loss
 
-def get_flops_loss(weight,flops_criterion,meter):
-    fl = flops_criterion(weight) * FLAGS.beta
-    meter["FlopsLoss"].cache(fl.cpu().detach().numpy())
-    return fl
+def get_flops_loss(weight,flops_criterion,meter,block_rng): #layer-wise weight calculation?
+    ##block_range, feature_dim, for-loop
+    loss= flops_criterion(weight,block_rng)
+    loss = loss*FLAGS.beta
+    meter["FlopsLoss"].cache(loss.cpu().detach().numpy())
+    return loss
 
 def run_one_epoch(
     epoch,
@@ -294,8 +295,8 @@ def run_one_epoch(
             iter += 1
 
             optimizer.zero_grad()
-            edge_weight = model_profiling(model.module)
-            flops_loss = get_flops_loss(edge_weight,flops_criterion,meters)
+            edge_weight,block_rng = model_profiling(model.module)
+            flops_loss = get_flops_loss(edge_weight,flops_criterion,meters,block_rng)
             loss = forward_loss(model, criterion, input, target, meters) + flops_loss # optimize w.r.t. CE Loss, flops loss
             loss.backward()
             optimizer.step()
@@ -311,8 +312,8 @@ def run_one_epoch(
             #current_macs, current_params = model_expected_profiling(model.module)
             #alphas = model.module.get_alphas()
             #loss_flops = torch.abs(current_macs / FLAGS.target_flops - 1.)
-            edge_weight = model_profiling(model.module)
-            flops_loss = get_flops_loss(edge_weight,flops_criterion,meters)
+            edge_weight,block_rng = model_profiling(model.module)
+            flops_loss = get_flops_loss(edge_weight,flops_criterion,meters,block_rng)
             loss = forward_loss(model, criterion, input, target, meters)
 
         batch_time = time.time() - end
@@ -401,7 +402,7 @@ def train_val_test():
     val_loader = data.val_loader
 
     criterion = torch.nn.CrossEntropyLoss(reduction="none").to(device)
-    flops_criterion = Flops_Loss(FLAGS.threshold,FLAGS.max_params).to(device)
+    flops_criterion = Flops_Loss(FLAGS.threshold,FLAGS.max_params,FLAGS.feature_dim).to(device)
     print("=> creating model '{}'".format(FLAGS.model))
     ##add threshold as param.
     model = getter("model")()

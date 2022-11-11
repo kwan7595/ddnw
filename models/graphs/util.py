@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 from torch import autograd
 import torch.functional as F
-import torch.nn.utils.prune as prune
 from genutil.config import FLAGS
 
 
@@ -13,20 +12,28 @@ def get_conv(inp, oup):
 
 
 class Flops_Loss(nn.Module): #class for flops-based loss implementation,
-    def __init__(self,threshold,max_params):
+    def __init__(self,threshold,max_params,feature_dim):
         super(Flops_Loss,self).__init__()
         self.threshold = threshold
         self.max_params = max_params
-    def forward(self,weight):
-        sigmoid = nn.Sigmoid()
-        edge_prob = sigmoid(weight.abs() - self.threshold)
-        graph_n_params = edge_prob.sum()
-        out_node_prob = torch.prod(1 - edge_prob, 0)
-        expected_node_n_params = ((1 - out_node_prob) * 3 * 3).sum()  # expected param
+        self.feature_dim = feature_dim
+    def forward(self,weight,block_rng):
+        graph_n_params = 0
+        expected_node_n_params = 0
+        for i in range(FLAGS.layers):
+            layer_weight = weight[
+                           min(block_rng[i + 1], FLAGS.dim - self.feature_dim):,
+                           block_rng[i]: block_rng[i + 1],
+                           ]
+            sigmoid = nn.Sigmoid()
+            edge_prob = sigmoid(FLAGS.alpha*(layer_weight.abs() - self.threshold))
+            graph_n_params += edge_prob.sum()
+            out_node_prob = torch.prod(1 - edge_prob, 1)
+            expected_node_n_params += ((1 - out_node_prob) * 3 * 3).sum()  # expected param
         n_params = expected_node_n_params + graph_n_params
+        print(n_params.item())
         g = nn.Softplus()
         loss_flops = g(n_params-self.max_params)
-        #print(edge_prob.shape,edge_prob.mean(),out_node_prob.shape,n_params)
         return loss_flops
 ########################################################################################################################
 # Graph Superclass                                                                                                     #
@@ -125,8 +132,6 @@ class DNW(Graph):
     def get_original_weight(self):
         return self.weight
 
-    def get_flops_loss(self):
-        return Flops_loss(self.weight)
 ########################################################################################################################
 # DNW without an update rule on the backwards pass                                                                     #
 ########################################################################################################################

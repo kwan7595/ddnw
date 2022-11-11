@@ -7,7 +7,7 @@ def model_profiling(model):
 
     if FLAGS.skip_profiling: # profiling for neuralgraph, expected_profiling->based on weight loss, relaxation with sigmoid.
         #return n_macs, n_params
-        return model.get_original_weight().squeeze().t()
+        return model.get_original_weight().squeeze(),model.get_block_rng()
 
     # using n_macs for conv2d as
     # (ins[1] * outs[1] *
