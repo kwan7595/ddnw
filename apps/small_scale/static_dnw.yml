@@ -9,13 +9,15 @@ test_batch_size: 512
 workers: 8
 
 # lr
-lr: 0.1
+lr: 0.01
 lr_scheduler: multistep
 multistep_lr_milestones: [30, 80] # 80,120
 multistep_lr_gamma: 0.1
 
 # optimizer
 optimizer: sgd
+is_bilevel : True
+second_optimizer : Adam
 momentum: 0.9
 weight_decay: 0.0001
 nestorov: False

@@ -249,7 +249,7 @@ class StaticNeuralGraph(nn.Module):
         self.graph = get_graph(
             FLAGS.prune_rate, self.dim, self.dim, self.downsample_dim, self.feature_dim
         )
-
+        self.pruning_parameter = self.graph.alpha
         self.relu = nn.ReLU(inplace=True)
 
         self.pool = nn.AvgPool2d(2)
@@ -293,8 +293,8 @@ class StaticNeuralGraph(nn.Module):
         num_nodes_with_ops = 0
         for i in range(self.layers):
             layer_weight=w[
-            min(self.block_rng[i + 1], self.dim - self.feature_dim):,
-            self.block_rng[i]: self.block_rng[i + 1],
+                min(self.block_rng[i + 1], self.dim - self.feature_dim):,
+                self.block_rng[i]: self.block_rng[i + 1],
             ]
             num_edge = layer_weight.count_nonzero().item()
             num_edges+=num_edge
