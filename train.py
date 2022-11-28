@@ -193,6 +193,7 @@ def get_meters(phase, model):
     meters = {}
     meters["CELoss"] = ScalarMeter("{}_CELoss".format(phase))
     meters["FlopsLoss"] = ScalarMeter("{}_FLLoss".format(phase))
+    meters["Expected_Flops"] = ScalarMeter("{}_E_FLOPS".format(phase))
     for k in FLAGS.topk:
         meters["top{}_accuracy".format(k)] = ScalarMeter(
             "{}_top{}_accuracy".format(phase, k)
@@ -245,9 +246,9 @@ def forward_loss(model, criterion, input, target, meter):
 
 def get_flops_loss(weight,flops_criterion,meter,block_rng): #layer-wise weight calculation?
     ##block_range, feature_dim, for-loop
-    loss= flops_criterion(weight,block_rng)
-    loss = loss*FLAGS.beta
+    loss,expected_flops = flops_criterion(weight,block_rng)
     meter["FlopsLoss"].cache(loss.cpu().detach().numpy())
+    meter["Expected_Flops"].cache(expected_flops.cpu().detach().numpy())
     return loss
 
 def run_one_epoch(
@@ -431,7 +432,7 @@ def train_val_test():
     val_loader = data.val_loader
 
     criterion = torch.nn.CrossEntropyLoss(reduction="none").to(device)
-    flops_criterion = Flops_Loss(FLAGS.threshold,FLAGS.max_params,FLAGS.feature_dim).to(device)
+    flops_criterion = Flops_Loss(FLAGS.threshold,FLAGS.max_params,FLAGS.beta,FLAGS.feature_dim).to(device)
     print("=> creating model '{}'".format(FLAGS.model))
     ##add threshold as param.
     model = getter("model")()
