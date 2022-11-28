@@ -12,12 +12,11 @@ def get_conv(inp, oup):
 
 
 class Flops_Loss(nn.Module): #class for flops-based loss implementation,
-    def __init__(self,threshold,max_params,beta,feature_dim):
+    def __init__(self,threshold,max_params,feature_dim):
         super(Flops_Loss,self).__init__()
         self.threshold = threshold
         self.max_params = max_params
         self.feature_dim = feature_dim
-        self.beta = beta
     def forward(self,weight,block_rng):
         graph_n_params = 0
         expected_node_n_params = 0
@@ -33,9 +32,9 @@ class Flops_Loss(nn.Module): #class for flops-based loss implementation,
             expected_node_n_params += ((1 - out_node_prob) * 3 * 3).sum()  # expected param
         n_params = expected_node_n_params + graph_n_params
         print(f'expected_flops={n_params.item()}')
-        g = nn.Softplus(beta=self.beta)
+        g = nn.Softplus()
         loss_flops = g(n_params-self.max_params)
-        return loss_flops,n_params
+        return loss_flops
 ########################################################################################################################
 # Graph Superclass                                                                                                     #
 ########################################################################################################################
