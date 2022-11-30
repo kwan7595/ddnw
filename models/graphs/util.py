@@ -34,7 +34,7 @@ class Flops_Loss(nn.Module): #class for flops-based loss implementation,
         print(f'expected_flops={n_params.item()}')
         g = nn.Softplus()
         loss_flops = g(n_params-self.max_params)
-        return loss_flops
+        return loss_flops,n_params
 ########################################################################################################################
 # Graph Superclass                                                                                                     #
 ########################################################################################################################
