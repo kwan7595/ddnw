@@ -37,7 +37,7 @@ def get_lr_scheduler(optimizer):
     """get learning rate"""
     if FLAGS.lr_scheduler == "multistep":
         lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
-            optimizer,
+            optimizer[0] if FLAGS.is_bilevel else optimizer,
             milestones=FLAGS.multistep_lr_milestones,
             gamma=FLAGS.multistep_lr_gamma,
         )
@@ -75,6 +75,24 @@ def get_lr_scheduler(optimizer):
                     FLAGS.lr_scheduler
                 )
             )
+    if FLAGS.is_bilevel:
+        if FLAGS.lr_scheduler == "multistep":
+            second_lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
+                optimizer[1],
+                milestones=FLAGS.multistep_lr_milestones,
+                gamma=FLAGS.multistep_lr_gamma,
+            )
+        else:
+            try:
+                lr_scheduler_lib = importlib.import_module(FLAGS.lr_scheduler)
+                return lr_scheduler_lib.get_lr_scheduler(optimizer)
+            except ImportError:
+                raise NotImplementedError(
+                    "Learning rate scheduler {} is not yet implemented.".format(
+                        FLAGS.lr_scheduler
+                    )
+                )
+        return lr_scheduler,second_lr_scheduler
     return lr_scheduler
 
 def parameter_seperator(model):
@@ -453,8 +471,6 @@ def train_val_test():
         model = model.to(device)
 
     start_epoch = 0
-    if FLAGS.is_bilevel:
-        optimizer,second_optimizer = optimizer[0],optimizer[1]
     lr_scheduler = get_lr_scheduler(optimizer)
     best_val = 0.0
     iter = 0.0
@@ -500,6 +516,8 @@ def train_val_test():
             if FLAGS.evaluate:
                 state_dict = {k[7:]: v for k, v in state_dict.items()}
             model.load_state_dict(state_dict)
+            if FLAGS.is_bilevel:
+                optimizer,second_optimizer = optimizer[0],optimizer[1]
             optimizer.load_state_dict(checkpoint["optimizer"])
             print(
                 "=> loaded checkpoint '{}' (epoch {})".format(
@@ -566,17 +584,19 @@ def train_val_test():
         return
 
     # save init.
-    torch.save(
-        {
-            "model": model.state_dict(),
-            "optimizer": optimizer.state_dict(),
-            "last_epoch": 0,
-            "best_val": best_val,
-            "meters": (train_meters, val_meters),
-            "iter": iter,
-        },
-        os.path.join(checkpoint_dir, "init.pt"),
-    )
+    if FLAGS.is_bilelvel:
+        torch.save(
+            {
+                "model": model.state_dict(),
+                "optimizer": optimizer[0].state_dict(),
+                "second_optimizer": optimizer[1].state_dict(),
+                "last_epoch": 0,
+                "best_val": best_val,
+                "meters": (train_meters, val_meters),
+                "iter": iter,
+            },
+            os.path.join(checkpoint_dir, "init.pt"),
+        )
 
     print("Start training.")
     for epoch in range(start_epoch, FLAGS.num_epochs):
@@ -598,7 +618,7 @@ def train_val_test():
 
         # val
         val_meters["best_val"].cache(best_val)
-        with torch.no_grad():
+        if FLAGS.is_bilevel:
             results = run_one_epoch(
                 epoch,
                 val_loader,
@@ -611,7 +631,20 @@ def train_val_test():
                 iter=iter,
                 scheduler=lr_scheduler,
             )
-
+        else:
+            with torch.no_grad():
+                results = run_one_epoch(
+                    epoch,
+                    val_loader,
+                    model,
+                    criterion,
+                    flops_criterion,
+                    optimizer,
+                    val_meters,
+                    phase="val",
+                    iter=iter,
+                    scheduler=lr_scheduler,
+                )
         if results["top1_accuracy"] > best_val:
             best_val = results["top1_accuracy"]
             torch.save({"model": model.state_dict()}, os.path.join(log_dir, "best.pt"))
