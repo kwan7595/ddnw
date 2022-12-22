@@ -77,13 +77,23 @@ def get_lr_scheduler(optimizer):
             )
     return lr_scheduler
 
+def parameter_seperator(model):
+    conv_param=[]
+    edge_param=[]
+    for name,param in model.named_parameters():
+        if 'graph' in name:
+            edge_param.append(param)
+        else:
+            conv_param.append(param)
+    return conv_param,edge_param
 
 def get_optimizer(model):
     """get optimizer"""
+    if FLAGS.bilevel:
+        conv_param,edge_param = parameter_seperator(model)
     if FLAGS.optimizer == "sgd":
-
         optimizer = torch.optim.SGD(
-            model.parameters(),
+            model.parameters() if not FLAGS.is_bilevel else conv_param,
             FLAGS.lr,
             momentum=FLAGS.momentum,
             weight_decay=FLAGS.weight_decay,
@@ -98,14 +108,25 @@ def get_optimizer(model):
                 "Optimizer {} is not yet implemented.".format(FLAGS.optimizer)
             )
     if FLAGS.is_bilevel:
-        if FLAGS.second_optimzier == "Adam":
-            second_optimizer = torch.optim.Adam(
-                model.parameters(),
-                FLAGS.lr,
-                weight_decay = FLAGS.weight_decay
+        if FLAGS.second_optimzier == "sgd":
+            second_optimizer = torch.optim.SGD(
+                edge_param,
+                FLAGS.second_lr,
+                momentum=FLAGS.second_momentum,
+                weight_decay=FLAGS.second_weight_decay,
+                nesterov=FLAGS.second_nestorov,
             )
-        return optimizer,second_optimizer
+        else:
+            try:
+                optimizer_lib = importlib.import_module(FLAGS.second_optimizer)
+                return optimizer_lib.get_optimizer(model)
+            except ImportError:
+                raise NotImplementedError(
+                    "Optimizer {} is not yet implemented.".format(FLAGS.second_optimizer)
+                )
+        return optimizer, second_optimizer
     return optimizer
+
 
 
 class Meter(object):
@@ -247,7 +268,6 @@ def forward_loss(model, criterion, input, target, meter):
 def get_flops_loss(weight,flops_criterion,meter,block_rng): #layer-wise weight calculation?
     ##block_range, feature_dim, for-loop
     loss,n_params= flops_criterion(weight,block_rng)
-    loss = loss*FLAGS.beta
     meter["FlopsLoss"].cache(loss.cpu().detach().numpy())
     meter["Expected_Flops"].cache(n_params.cpu().detach().numpy())
     return loss
@@ -275,9 +295,9 @@ def run_one_epoch(
     if train:
         model.train()
     else: #validation phase ->bilevel?
-        if not FLAGS.is_bilevel:
-            model.eval()
-
+        model.eval()
+    if FLAGS.is_bilevel:
+        optimizer,second_optimizer = optimizer[0],optimizer[1]
     if train and FLAGS.lr_scheduler == "linear_decaying":
         if hasattr(FLAGS, "epoch_len"):
             linear_decaying_per_step = (
@@ -309,9 +329,7 @@ def run_one_epoch(
             # else:
             #     print(max(model.module.graph.weight.grad.flatten()))
             optimizer.zero_grad()
-            edge_weight,block_rng = model_profiling(model.module)
-            flops_loss = get_flops_loss(edge_weight,flops_criterion,meters,block_rng)
-            loss = forward_loss(model, criterion, input, target, meters) + flops_loss # optimize w.r.t. CE Loss, flops loss
+            loss = forward_loss(model, criterion, input, target, meters)# flops_loss # optimize w.r.t. CE Loss, flops loss
             loss.backward()
             optimizer.step()
             if FLAGS.lr_scheduler == "linear_decaying":
@@ -321,27 +339,20 @@ def run_one_epoch(
                 scheduler.step()
 
         else:
+            ############################### VAL #################################
+            #bilevel optimization -> w.r.t. Flops loss
+            #current_macs, current_params = model_expected_profiling(model.module)
+            #alphas = model.module.get_alphas()
+            #loss_flops = torch.abs(current_macs / FLAGS.target_flops - 1.)
             if FLAGS.is_bilevel:
-                for name,param in model.named_parameters(): # freeze weights..? how should i implement here?
-                    if name != 'pruning_parameter':
-                        param.requires_grad = False
-                    else:
-                        param.requires_grad = True
-                optimizer.zero_grad()
-                edge_weight, block_rng = model_profiling(model.module)
-                flops_loss = get_flops_loss(edge_weight, flops_criterion, meters, block_rng)
-                loss = forward_loss(model, criterion, input, target, meters)
-                flops_loss.backward()
-                optimizer.step()
-            else:
-                ############################### VAL #################################
-                #bilevel optimization -> w.r.t. Flops loss
-                #current_macs, current_params = model_expected_profiling(model.module)
-                #alphas = model.module.get_alphas()
-                #loss_flops = torch.abs(current_macs / FLAGS.target_flops - 1.)
+                second_optimizer.zero_grad()
                 edge_weight,block_rng = model_profiling(model.module)
                 flops_loss = get_flops_loss(edge_weight,flops_criterion,meters,block_rng)
-                loss = forward_loss(model, criterion, input, target, meters)
+                flops_loss.backward()
+                second_optimizer.step()
+            edge_weight,block_rng = model_profiling(model.module)
+            flops_loss = get_flops_loss(edge_weight,flops_criterion,meters,block_rng)
+            loss = forward_loss(model, criterion, input, target, meters)
 
         batch_time = time.time() - end
         end = time.time()
@@ -395,14 +406,7 @@ def run_one_epoch(
 
     if train:
         return results, iter
-    else:
-        if FLAGS.is_bilevel: # unfreeze parameters
-            for name, param in model.named_parameters():  # freeze weights.. and unfreeze pruning param? how should i implement here?
-                if name != 'pruning_parameter':
-                    param.requires_grad = False
-                else:
-                    param.requires_grad = True
-        return results
+    return results
 
 
 def train_val_test():
@@ -442,16 +446,15 @@ def train_val_test():
     ##add threshold as param.
     model = getter("model")()
 
-    if FLAGS.is_bilevel:
-        optimizer,second_optimizer = get_optimizer(model)
-    else:
-        optimizer = get_optimizer(model)
+    optimizer = get_optimizer(model)
 
     if not FLAGS.evaluate:
         model = nn.DataParallel(model)
         model = model.to(device)
 
     start_epoch = 0
+    if FLAGS.is_bilevel:
+        optimizer,second_optimizer = optimizer[0],optimizer[1]
     lr_scheduler = get_lr_scheduler(optimizer)
     best_val = 0.0
     iter = 0.0
@@ -595,32 +598,20 @@ def train_val_test():
 
         # val
         val_meters["best_val"].cache(best_val)
-        if FLAGS.is_bilevel: # bilevel -train : CE, val : FLops
+        with torch.no_grad():
             results = run_one_epoch(
                 epoch,
                 val_loader,
                 model,
                 criterion,
                 flops_criterion,
-                second_optimizer,
+                optimizer,
                 val_meters,
                 phase="val",
-                scheduler=lr_scheduler
+                iter=iter,
+                scheduler=lr_scheduler,
             )
-        else:
-            with torch.no_grad():
-                results = run_one_epoch(
-                    epoch,
-                    val_loader,
-                    model,
-                    criterion,
-                    flops_criterion,
-                    optimizer,
-                    val_meters,
-                    phase="val",
-                    iter=iter,
-                    scheduler=lr_scheduler,
-                )
+
         if results["top1_accuracy"] > best_val:
             best_val = results["top1_accuracy"]
             torch.save({"model": model.state_dict()}, os.path.join(log_dir, "best.pt"))

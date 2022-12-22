@@ -8,19 +8,23 @@ batch_size: 512
 test_batch_size: 512
 workers: 8
 
-# lr
-lr: 0.01
+# lr for CE Loss
+lr: 0.1
 lr_scheduler: multistep
-multistep_lr_milestones: [30, 80] # 80,120
+multistep_lr_milestones: [80, 120] # 80,120
 multistep_lr_gamma: 0.1
 
-# optimizer
+# optimizer for CE Loss
 optimizer: sgd
-is_bilevel : True
-second_optimizer : Adam
 momentum: 0.9
 weight_decay: 0.0001
 nestorov: False
+
+is_bilevel: True
+second_optimizer : sgd
+second_momentum: 0.9
+second_weight_decay: 0.0001
+nestrov: False
 
 # info
 output_size: 10
@@ -50,7 +54,7 @@ layers: 5
 graph: dnw
 setting: static
 skip_profiling: True
-alpha : 100
+alpha : 80 # edge probability controling param
 threshold : 0.01
-max_params : 2.0e+5
-beta : 0.001
+max_params : 1.6e+05
+beta : 0.01 # flops_loss scale param - 1/b*log(1+e(b*(dflops))
