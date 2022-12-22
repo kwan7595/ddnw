@@ -77,7 +77,7 @@ def get_lr_scheduler(optimizer):
             )
     if FLAGS.is_bilevel:
         if FLAGS.lr_scheduler == "multistep":
-            second_lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
+            flops_lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
                 optimizer[1],
                 milestones=FLAGS.multistep_lr_milestones,
                 gamma=FLAGS.multistep_lr_gamma,
@@ -92,7 +92,7 @@ def get_lr_scheduler(optimizer):
                         FLAGS.lr_scheduler
                     )
                 )
-        return lr_scheduler,second_lr_scheduler
+        return lr_scheduler,flops_lr_scheduler
     return lr_scheduler
 
 def parameter_seperator(model):
@@ -107,7 +107,7 @@ def parameter_seperator(model):
 
 def get_optimizer(model):
     """get optimizer"""
-    if FLAGS.bilevel:
+    if FLAGS.is_bilevel:
         conv_param,edge_param = parameter_seperator(model)
     if FLAGS.optimizer == "sgd":
         optimizer = torch.optim.SGD(
@@ -126,23 +126,21 @@ def get_optimizer(model):
                 "Optimizer {} is not yet implemented.".format(FLAGS.optimizer)
             )
     if FLAGS.is_bilevel:
-        if FLAGS.second_optimzier == "sgd":
-            second_optimizer = torch.optim.SGD(
+        if FLAGS.flops_optimizer == "adam":
+            flops_optimizer = torch.optim.Adam(
                 edge_param,
-                FLAGS.second_lr,
-                momentum=FLAGS.second_momentum,
-                weight_decay=FLAGS.second_weight_decay,
-                nesterov=FLAGS.second_nestorov,
+                FLAGS.flops_lr,
+                weight_decay=FLAGS.flops_weight_decay,
             )
         else:
             try:
-                optimizer_lib = importlib.import_module(FLAGS.second_optimizer)
+                optimizer_lib = importlib.import_module(FLAGS.flops_optimizer)
                 return optimizer_lib.get_optimizer(model)
             except ImportError:
                 raise NotImplementedError(
-                    "Optimizer {} is not yet implemented.".format(FLAGS.second_optimizer)
+                    "Optimizer {} is not yet implemented.".format(FLAGS.flops_optimizer)
                 )
-        return optimizer, second_optimizer
+        return optimizer, flops_optimizer
     return optimizer
 
 
@@ -315,7 +313,7 @@ def run_one_epoch(
     else: #validation phase ->bilevel?
         model.eval()
     if FLAGS.is_bilevel:
-        optimizer,second_optimizer = optimizer[0],optimizer[1]
+        optimizer,flops_optimizer = optimizer[0],optimizer[1]
     if train and FLAGS.lr_scheduler == "linear_decaying":
         if hasattr(FLAGS, "epoch_len"):
             linear_decaying_per_step = (
@@ -347,6 +345,8 @@ def run_one_epoch(
             # else:
             #     print(max(model.module.graph.weight.grad.flatten()))
             optimizer.zero_grad()
+            edge_weight, block_rng = model_profiling(model.module)
+            flops_loss = get_flops_loss(edge_weight, flops_criterion, meters, block_rng)
             loss = forward_loss(model, criterion, input, target, meters)# flops_loss # optimize w.r.t. CE Loss, flops loss
             loss.backward()
             optimizer.step()
@@ -363,11 +363,11 @@ def run_one_epoch(
             #alphas = model.module.get_alphas()
             #loss_flops = torch.abs(current_macs / FLAGS.target_flops - 1.)
             if FLAGS.is_bilevel:
-                second_optimizer.zero_grad()
+                flops_optimizer.zero_grad()
                 edge_weight,block_rng = model_profiling(model.module)
                 flops_loss = get_flops_loss(edge_weight,flops_criterion,meters,block_rng)
                 flops_loss.backward()
-                second_optimizer.step()
+                flops_optimizer.step()
             edge_weight,block_rng = model_profiling(model.module)
             flops_loss = get_flops_loss(edge_weight,flops_criterion,meters,block_rng)
             loss = forward_loss(model, criterion, input, target, meters)
@@ -517,7 +517,7 @@ def train_val_test():
                 state_dict = {k[7:]: v for k, v in state_dict.items()}
             model.load_state_dict(state_dict)
             if FLAGS.is_bilevel:
-                optimizer,second_optimizer = optimizer[0],optimizer[1]
+                optimizer,flops_optimizer = optimizer[0],optimizer[1]
             optimizer.load_state_dict(checkpoint["optimizer"])
             print(
                 "=> loaded checkpoint '{}' (epoch {})".format(
@@ -584,12 +584,12 @@ def train_val_test():
         return
 
     # save init.
-    if FLAGS.is_bilelvel:
+    if FLAGS.is_bilevel:
         torch.save(
             {
                 "model": model.state_dict(),
                 "optimizer": optimizer[0].state_dict(),
-                "second_optimizer": optimizer[1].state_dict(),
+                "flops_optimizer": optimizer[1].state_dict(),
                 "last_epoch": 0,
                 "best_val": best_val,
                 "meters": (train_meters, val_meters),
@@ -597,11 +597,25 @@ def train_val_test():
             },
             os.path.join(checkpoint_dir, "init.pt"),
         )
-
+    else:
+        torch.save(
+            {
+                "model": model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "last_epoch": 0,
+                "best_val": best_val,
+                "meters": (train_meters, val_meters),
+                "iter": iter,
+            },
+            os.path.join(checkpoint_dir, "init.pt"),
+        )
     print("Start training.")
     for epoch in range(start_epoch, FLAGS.num_epochs):
         if FLAGS.lr_scheduler != "cosine":
-            lr_scheduler.step(epoch)
+            if FLAGS.is_bilevel:
+                lr_scheduler[0].step(epoch)
+            else:
+                lr_scheduler.step(epoch)
         # train
         results, iter = run_one_epoch(
             epoch,
@@ -615,7 +629,11 @@ def train_val_test():
             iter=iter,
             scheduler=lr_scheduler,
         )
-
+        if FLAGS.lr_scheduler != "cosine":
+            if FLAGS.is_bilevel:
+                lr_scheduler[1].step(epoch)
+            else:
+                lr_scheduler.step(epoch)
         # val
         val_meters["best_val"].cache(best_val)
         if FLAGS.is_bilevel:
@@ -654,17 +672,31 @@ def train_val_test():
 
         # save latest checkpoint.
         if epoch == 0 or (epoch + 1) % 10 == 0:
-            torch.save(
-                {
-                    "model": model.state_dict(),
-                    "optimizer": optimizer.state_dict(),
-                    "last_epoch": epoch,
-                    "best_val": best_val,
-                    "meters": (train_meters, val_meters),
-                    "iter": iter,
-                },
-                os.path.join(checkpoint_dir, "epoch_{}.pt".format(epoch)),
-            )
+            if FLAGS.is_bilevel:
+                torch.save(
+                    {
+                        "model": model.state_dict(),
+                        "optimizer": optimizer[0].state_dict(),
+                        "flops_optimizer:" : optimizer[1].state_dict(),
+                        "last_epoch": epoch,
+                        "best_val": best_val,
+                        "meters": (train_meters, val_meters),
+                        "iter": iter,
+                    },
+                    os.path.join(checkpoint_dir, "epoch_{}.pt".format(epoch)),
+                )
+            else:
+                torch.save(
+                    {
+                        "model": model.state_dict(),
+                        "optimizer": optimizer.state_dict(),
+                        "last_epoch": epoch,
+                        "best_val": best_val,
+                        "meters": (train_meters, val_meters),
+                        "iter": iter,
+                    },
+                    os.path.join(checkpoint_dir, "epoch_{}.pt".format(epoch)),
+                )
             #alphas = model.module.get_alphas()
             #flops, params = model_profiling(model.module) #this code is original code. for large_scale apps
             params = model.module.profiling()
