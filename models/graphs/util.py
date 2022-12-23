@@ -33,7 +33,7 @@ class Flops_Loss(nn.Module): #class for flops-based loss implementation,
         n_params = expected_node_n_params + graph_n_params
         print(f'expected_flops={n_params.item()}')
         g = nn.Softplus()
-        loss_flops = FLAGS.beta*g(n_params-self.max_params)
+        loss_flops = g(n_params-self.max_params)
         return loss_flops,n_params
 ########################################################################################################################
 # Graph Superclass                                                                                                     #
@@ -44,7 +44,7 @@ class Graph(nn.Conv2d):
     def __init__(self, prune_rate, dim_in, dim_out):
         super(Graph, self).__init__(dim_in, dim_out, kernel_size=1, bias=False)
         self.prune_rate = prune_rate
-        self.pruning_parameter=nn.Parameter(torch.tensor(FLAGS.pruning_parameter),requires_grad=False)
+        self.alpha=nn.Parameter(torch.tensor(FLAGS.alpha),requires_grad=False)
     def get_weight(self):
         return self.weight
 
@@ -104,13 +104,12 @@ class ChooseTopEdges(autograd.Function):
     """ Chooses the top edges for the forwards pass but allows gradient flow to all edges in the backwards pass"""
     ## add tau - threshold value to choose edges those weights are higher than t
     @staticmethod
-    def forward(ctx, weight, prune_rate,pruning_parameter):
+    def forward(ctx, weight, prune_rate,alpha):
         output = weight.clone()
         #_, idx = weight.flatten().abs().sort()
         #p = int(prune_rate * weight.numel())
         #threshold = weight.abs().mean() * alpha
-        #threshold = FLAGS.threshold
-        threshold = pruning_parameter
+        threshold = FLAGS.threshold
         abs_out = output.abs() #flatten with absolute values
         mask = abs_out.le(threshold) # create mask, s.t value>threshold ->false, else true
         #l1_threshold= torch.norm(output,p=1)/weight.numel()*threshold# ->consider 1l norm as a threshold
@@ -128,7 +127,7 @@ class DNW(Graph):
         super().__init__(prune_rate, dim_in, dim_out)
 
     def get_weight(self):
-        return ChooseTopEdges.apply(self.weight, self.prune_rate,self.pruning_parameter)
+        return ChooseTopEdges.apply(self.weight, self.prune_rate,self.alpha)
 
     def get_original_weight(self):
         return self.weight

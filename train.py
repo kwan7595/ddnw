@@ -111,7 +111,7 @@ def get_optimizer(model):
         conv_param,edge_param = parameter_seperator(model)
     if FLAGS.optimizer == "sgd":
         optimizer = torch.optim.SGD(
-            model.parameters() if not FLAGS.is_bilevel else conv_param,
+            model.parameters(), #if not FLAGS.is_bilevel else conv_param,
             FLAGS.lr,
             momentum=FLAGS.momentum,
             weight_decay=FLAGS.weight_decay,

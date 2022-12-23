@@ -10,6 +10,7 @@ workers: 8
 
 # lr for CE Loss
 lr: 0.1
+flops_lr : 0.01
 lr_scheduler: multistep
 multistep_lr_milestones: [80, 120] # 80,120
 multistep_lr_gamma: 0.1
@@ -21,9 +22,9 @@ weight_decay: 0.0001
 nestorov: False
 
 is_bilevel: True
-second_optimizer : sgd
-second_momentum: 0.9
-second_weight_decay: 0.0001
+flops_optimizer : adam
+flops_momentum: 0.9
+flops_weight_decay: 0.0001
 nestrov: False
 
 # info
@@ -56,5 +57,5 @@ setting: static
 skip_profiling: True
 alpha : 80 # edge probability controling param
 threshold : 0.01
-max_params : 1.6e+05
+max_params : 1.0e+05
 beta : 0.01 # flops_loss scale param - 1/b*log(1+e(b*(dflops))
