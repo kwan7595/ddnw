@@ -31,9 +31,10 @@ class Flops_Loss(nn.Module): #class for flops-based loss implementation,
             out_node_prob = torch.prod(1 - edge_prob, 1)
             expected_node_n_params += ((1 - out_node_prob) * 3 * 3).sum()  # expected param
         n_params = expected_node_n_params + graph_n_params
-        print(f'expected_flops={n_params.item()}')
         g = nn.Softplus()
         loss_flops = FLAGS.beta*g(n_params-self.max_params)
+        print(f'expected_flops={n_params.item()},loss={loss_flops.item()}')
+        #scale input with max_param constraint
         return loss_flops,n_params
 ########################################################################################################################
 # Graph Superclass                                                                                                     #

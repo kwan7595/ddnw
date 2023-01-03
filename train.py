@@ -115,7 +115,7 @@ def get_optimizer(model):
             FLAGS.lr,
             momentum=FLAGS.momentum,
             weight_decay=FLAGS.weight_decay,
-            nesterov=FLAGS.nestorov,
+            nesterov=FLAGS.nesterov,
         )
     else:
         try:
@@ -362,16 +362,13 @@ def run_one_epoch(
             #current_macs, current_params = model_expected_profiling(model.module)
             #alphas = model.module.get_alphas()
             #loss_flops = torch.abs(current_macs / FLAGS.target_flops - 1.)
+            edge_weight, block_rng = model_profiling(model.module)
+            flops_loss = get_flops_loss(edge_weight, flops_criterion, meters, block_rng)
+            loss = forward_loss(model, criterion, input, target, meters)
             if FLAGS.is_bilevel:
                 flops_optimizer.zero_grad()
-                edge_weight,block_rng = model_profiling(model.module)
-                flops_loss = get_flops_loss(edge_weight,flops_criterion,meters,block_rng)
                 flops_loss.backward()
                 flops_optimizer.step()
-            edge_weight,block_rng = model_profiling(model.module)
-            flops_loss = get_flops_loss(edge_weight,flops_criterion,meters,block_rng)
-            loss = forward_loss(model, criterion, input, target, meters)
-
         batch_time = time.time() - end
         end = time.time()
         n_params = model.module.profiling()
@@ -427,7 +424,7 @@ def run_one_epoch(
     return results
 
 
-def train_val_test():
+def train_val_test(): #TODO : find out what's wrong with the writer(expected_param and param_loss value)
     global writer
 
     if not os.path.exists(FLAGS.save_dir):
